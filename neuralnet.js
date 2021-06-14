@@ -14,8 +14,11 @@ const newNeuralNet = (layerCounts, randomRange = 1) => ({
     pass(input) {
         return this.layers.reduce((p, layer) => layer.pass(p), input.map(i => [i])).flat();
     },
-    error(input, target) {
-        return 0.5 * this.pass(input).reduce((p, c, i) => p + (c - target[i]) ** 2, 0);
+    error(inputs, targets) {
+        return inputs.reduce((acc, input, t) => {
+            const target = targets[t];
+            return acc + this.pass(input).reduce((p, c, i) => p + (c - target[i]) ** 2, 0);
+        }, 0) * 0.5 / inputs.length;
     },
     backPropMulti(inputs, targets, alpha) {
         inputs.forEach((input, j) => {
