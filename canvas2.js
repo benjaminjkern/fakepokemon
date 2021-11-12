@@ -23,7 +23,7 @@ const image = new Image(96, 96);
 let testPokemon = [];
 let pokemon = [];
 
-window.onload = function() {
+window.onload = function () {
     canvas = document.getElementById('canvas');
     let ctx = canvas.getContext('2d');
 
@@ -31,11 +31,11 @@ window.onload = function() {
     //     start(ctx);
     // }
 
-    window.onkeydown = function(e) {
+    window.onkeydown = function (e) {
         keysDown[e.code] = true;
     }
 
-    window.onkeyup = function(e) {
+    window.onkeyup = function (e) {
         delete keysDown[e.code];
     }
 
@@ -43,7 +43,7 @@ window.onload = function() {
 };
 
 const restart = (ctx) => {
-    autoencoder = newNeuralNet([96 * 96 * 4, 100, 10, 100, 96 * 96 * 4], 1);
+    autoencoder = newQuadraticNeuralNet([96 * 96 * 4, 1, 96 * 96 * 4], 1);
 
     start(ctx);
 }
