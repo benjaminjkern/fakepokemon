@@ -9,7 +9,7 @@ const mutateNeuralNet = (oldNeuralNet, mutation = 1) => {
 
 const newNeuralNet = (layerCounts, randomRange = 1) => ({
     name: Math.random().toString(36).substring(2),
-    layers: layerCounts.slice(1).map((layerCount, i) => newLinearLayer(layerCounts[i], layerCount, randomRange)),
+    layers: layerCounts.slice(1).map((layerCount, i) => newLinearLayer(layerCounts[i], layerCount, randomRange, ...(i === layerCounts.length - 2 ? [] : [ReLU, dReLU]))),
     layerCounts,
     pass(input) {
         return this.layers.reduce((p, layer) => layer.pass(p), input.map(i => [i])).flat();
@@ -22,35 +22,56 @@ const newNeuralNet = (layerCounts, randomRange = 1) => ({
     },
     backPropMulti(inputs, targets, alpha) {
         inputs.forEach((input, j) => {
-            const target = targets[j];
-            let A = this.pass(input).map((y, i) => (y - target[i]) * y * (1 - y));
+            // TODO: derror
+
+            // THIS IS CROSS ENTROPY DONT USE IT IT BROKEN
+            // let A = this.pass(input).map((y, i) => targets.reduce((p, target, t) => p +
+            //         (t === j ? y - target[i] : ((y + target[i] - 1) * (targets[t][i] - targets[j][i]) ** 2)), 0) *
+            //     this.layers[this.layers.length - 1].dsigma(y));
+            let A = this.pass(input).map((y, i) => y - targets[j][i]);
+
             for (let n = this.layers.length - 1; n >= 0; n--) {
-                A = this.layers[n].getAdjustments(A, alpha);
+                A = this.layers[n].getAdjustments(A);
             }
         });
+        const maxGradient = 10;
+        const gradientLengthSquared = this.layers.reduce((p, layer) => p + layer.dbias.reduce((s, b) => s + b ** 2, 0) + layer.dweights.reduce((s, row) => s + row.reduce((s2, w) => s2 + w ** 2, 0), 0), 0);
+        const clipAmount = Math.min(1, maxGradient / Math.sqrt(gradientLengthSquared));
+        // const clipAmount = 1;
         for (let n = this.layers.length - 1; n >= 0; n--) {
-            this.layers[n].adjust(alpha / inputs.length);
+            this.layers[n].adjust(clipAmount * alpha / inputs.length);
         }
     }
 });
 
-const newLinearLayer = (inputSize, outputSize, randomRange) => ({
+const newLinearLayer = (inputSize, outputSize, randomRange, sigma = x => x, dsigma = y => 1) => ({
     weights: Array(outputSize).fill().map(() => Array(inputSize).fill().map(() => initRand(randomRange))),
     bias: Array(outputSize).fill().map(() => [initRand(randomRange)]),
-    sigma: ((x) => 1 / (1 + Math.exp(-x))),
+    sigma,
+    dsigma,
     lastOutput: undefined,
     pass(input) {
+        // console.log(input.flat());
         this.lastInput = [...input];
+        // console.log(matadd(matMult(this.weights, input), this.bias).flat());
         this.lastOutput = matadd(matMult(this.weights, input), this.bias).map(row => [this.sigma(row[0])]);
         return this.lastOutput;
     },
     getAdjustments(A) {
-        this.dbias = A.map((a, y) => [((this.dbias ? this.dbias[y] : 0) - 0) + (a - 0)]);
-        this.dweights = A.map((a, y) => this.lastInput.map((i, x) => ((this.dweights ? this.dweights[y][x] : 0) - 0) + (i - 0) * (a - 0)));
-        return matMult([A], this.weights)[0].map((y, i) => y * this.lastInput[i] * (1 - this.lastInput[i]));
+        if (!this.dbias) this.dbias = A.map(() => [0]);
+        if (!this.dweights) this.dweights = A.map(() => this.lastInput.map(() => 0));
+
+        // console.log(this.lastInput);
+
+        const adjust = A.map((a, y) => a * this.dsigma(this.lastOutput[y][0]));
+        // console.log(adjust);
+
+        this.dbias = adjust.map((a, y) => [this.dbias[y][0] + a]);
+        this.dweights = adjust.map((a, y) => this.lastInput.map((i, x) => this.dweights[y][x] + i[0] * a));
+        return matMult([adjust], this.weights)[0];
     },
     adjust(alpha) {
-        this.bias = this.bias.map(([bias], i) => [bias - alpha * this.dbias[i]]);
+        this.bias = this.bias.map(([bias], i) => [bias - alpha * this.dbias[i][0]]);
         this.weights = this.weights.map((row, i) => row.map((weight, j) => weight - alpha * this.dweights[i][j]));
         this.dbias = undefined;
         this.dweights = undefined;
@@ -103,3 +124,15 @@ const newKernel = (width, height, range, padding = 0, stride = 1) => ({
         return output;
     }
 });
+
+const sigmoid = x => 1 / (1 + Math.exp(-x));
+const dsigmoid = y => y * (1 - y);
+
+const ReLU = x => x > 0 ? x : 0;
+const dReLU = y => y > 0 ? 1 : 0;
+
+const clip = x => Math.max(0, Math.min(1, x));
+const dclip = y => y === 1 || y === 0 ? 0 : 1;
+
+const lrelu = (alpha) => x => x > 0 ? x : alpha * x;
+const dlrelu = (alpha) => y => y > 0 ? 1 : alpha;

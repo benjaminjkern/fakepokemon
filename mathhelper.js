@@ -29,7 +29,7 @@ const matadd = (a, b) => {
     throw "Mismatched size";
 }
 
-// ?
+// theoretically works on any size tensor but is slow ?
 const matmult = (a, b) => {
     if (!a.length && !b.length) return a * b;
     if (!a.length) return [];
@@ -92,10 +92,11 @@ const rref = (A) => {
     return newA;
 }
 
+// assumes two matrices
 const matMult = (A, B) => {
     if (!B[0].length)
         return A.map(row => dot(row, B));
-    if (A[0].length !== B.length) throw "INVALID";
+    if (A[0].length !== B.length) throw `INVALID [${A.length}x${A[0].length}]*[${B.length}x${B[0].length}]`;
 
     const answer = Array(A.length).fill().map(() => Array(B[0].length).fill(0));
     for (let y = 0; y < A.length; y++) {

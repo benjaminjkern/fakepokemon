@@ -3,17 +3,24 @@ const controlVars = { kill: false, killed: true };
 const settings = {};
 const keysDown = {};
 
-let generator;
+const mutate = false;
+const backprop = true;
+
+let best;
 let autoencoder;
 let fakeOutput;
 let loading = false;
 let loaded = false;
 let real;
 let inputImage;
-let fakeImage, fakeImage2;
+let fakeImages;
+let fakeImage;
+let realImage;
+let realFakeImage;
 let count = 0;
 const image = new Image(96, 96);
 
+let testPokemon = [];
 let pokemon = [];
 
 window.onload = function() {
@@ -33,15 +40,15 @@ window.onload = function() {
     }
 
     restart(ctx);
-    // drawLoop(ctx);
 };
 
 const restart = (ctx) => {
-    autoencoder = newNeuralNet([96 * 96 * 4, 500, 96 * 96 * 4], 1);
+    autoencoder = newNeuralNet([96 * 96 * 4, 100, 10, 100, 96 * 96 * 4], 1);
 
     start(ctx);
-    drawLoop(ctx);
 }
+
+const numPokemon = 2;
 
 
 const start = (ctx) => {
@@ -49,29 +56,71 @@ const start = (ctx) => {
     if (!controlVars.killed) return;
     controlVars.kill = false;
 
-    canvas.width = 96 * 3;
-    canvas.height = 96;
+    canvas.width = 96 * numPokemon;
+    canvas.height = 96 * 2;
 
-    makeframe(ctx);
+    loading = true;
+    initframe(ctx);
+    // makeframe(ctx);
 }
 
 const drawLoop = (ctx) => {
     setTimeout(() => drawLoop(ctx), 1000);
     if (count === 0 || !inputImage) return;
 
-
     count = 0;
-    ctx.clearRect(96, 0, 96*2, 96);
-    let imageData = ctx.getImageData(96, 0, 96, 96);
+
+    let imageData;
+
+    ctx.clearRect(0, 0, 96 * (numPokemon), 96 * 2);
+    for (let p = 0; p < numPokemon; p++) {
+        const encodedImage = fakeImages[p];
+        imageData = ctx.getImageData(96 * p, 0, 96, 96);
+        encodedImage.forEach((o, i) => imageData.data[i] = Math.floor(o * 256));
+        ctx.putImageData(imageData, 96 * p, 0);
+    }
+    imageData = ctx.getImageData(0, 96, 96, 96);
     fakeImage.forEach((o, i) => imageData.data[i] = Math.floor(o * 256));
-    ctx.putImageData(imageData, 96, 0);
-    
-    imageData = ctx.getImageData(96*2, 0, 96, 96);
-    fakeImage2.forEach((o, i) => imageData.data[i] = Math.floor(o * 256));
-    ctx.putImageData(imageData, 96*2, 0);
+    ctx.putImageData(imageData, 0, 96);
+
+    imageData = ctx.getImageData(96, 96, 96, 96);
+    realImage.forEach((o, i) => imageData.data[i] = Math.floor(o * 256));
+    ctx.putImageData(imageData, 96, 96);
+
+    imageData = ctx.getImageData(96 * 2, 96, 96, 96);
+    realFakeImage.forEach((o, i) => imageData.data[i] = Math.floor(o * 256));
+    ctx.putImageData(imageData, 96 * 2, 96);
 }
 
-const initframe = (ctx) => {}
+const initframe = (ctx) => {
+    if (loading) {
+        if (!loaded) {
+            image.src = 'black-white/' + (pokemon.length + 1) + '.png';
+
+            image.onload = () => {
+                loaded = true;
+                ctx.clearRect(0, 0, 96, 96);
+
+                ctx.drawImage(image, 0, 0);
+                const imageData = ctx.getImageData(0, 0, 96, 96);
+                inputImage = [...imageData.data].map(d => d / 255);
+            }
+        }
+        if (loaded) {
+            pokemon[pokemon.length] = inputImage;
+            loaded = false;
+            if (pokemon.length >= numPokemon * 2)
+                loading = false;
+        }
+
+        setTimeout(() => initframe(ctx), 1);
+    } else {
+        testPokemon = pokemon.slice(numPokemon);
+        pokemon = pokemon.slice(0, numPokemon);
+        makeframe(ctx);
+        drawLoop(ctx);
+    }
+}
 
 const makeframe = (ctx) => {
     count++;
@@ -82,47 +131,38 @@ const makeframe = (ctx) => {
     }
     controlVars.killed = false;
 
-    if (!loading) {
-        if (!loaded) {
-            loading = true;
-            image.src = 'black-white/' + Math.floor(Math.random() * 649 + 1) + '.png';
 
-            image.onload = () => {
-                loading = false;
-                loaded = true;
-                ctx.clearRect(0, 0, 96, 96);
+    autoencoder.totalError = autoencoder.error(pokemon, pokemon);
+    console.log(autoencoder.totalError);
 
-                ctx.drawImage(image, 0, 0);
-                const imageData = ctx.getImageData(0, 0, 96, 96);
-                inputImage = [...imageData.data].map(d => d / 255);
-            }
-        }
-        if (loaded) {
-            pokemon.push(inputImage);
-            loaded = false;
-        }
+    if (backprop) {
+        autoencoder.backPropMulti(pokemon, pokemon, 0.1);
     }
-    if (pokemon.length === 10) {
+    if (mutate) {
+        if (!best || best.totalError > autoencoder.totalError) {
+            console.log("%cYEE", "color:red");
+            best = autoencoder;
+        }
 
-        autoencoder.count = (autoencoder.count || 0) + 1;
-        let factor = 1;
-
-        autoencoder.totalWeight = (autoencoder.totalWeight || 0) + factor;
-        autoencoder.totalError = (autoencoder.totalError || 0) + autoencoder.error(pokemon, pokemon) * factor;
-
-        console.log(autoencoder.totalError / autoencoder.totalWeight);
-
-        autoencoder.backPropMulti(pokemon, pokemon, 1);
-
-        fakeImage = autoencoder.pass(inputImage);
-        
-        const generator = mutateNeuralNet(autoencoder, 0);
-        const mid = Math.floor(generator.layerCounts.length / 2);
-        generator.layers = generator.layers.slice(mid);
-        fakeImage2 = generator.pass(Array(generator.layerCounts[mid]).fill().map(()=>Math.random()));
-
-        pokemon = [];
+        autoencoder = mutateNeuralNet(best, 0.1);
     }
+
+    fakeImages = pokemon.map(pok => (best || autoencoder).pass(pok));
+
+    realImage = testPokemon[Math.floor(Math.random() * testPokemon.length)];
+
+    realFakeImage = autoencoder.pass(realImage);
+
+    const decoder = mutateNeuralNet(autoencoder, 0);
+    const encoder = mutateNeuralNet(autoencoder, 0);
+    const mid = Math.floor(decoder.layerCounts.length / 2);
+    decoder.layers = decoder.layers.slice(mid);
+    encoder.layers = encoder.layers.slice(0, mid);
+    fakeImage = decoder.pass(Array(decoder.layerCounts[mid]).fill().map(() => Math.random()));
+
+    // for (const poke of pokemon) {
+    //     console.log(encoder.pass(poke));
+    // }
 
     setTimeout(() => {
         makeframe(ctx);
