@@ -9,22 +9,22 @@ const newTensor = (dim, data) => {
 
 const randomTensor = (dim, range = 1) => {
     const tensor = zerosTensor(dim);
-    const size = dimSize(dim);
-    tensor.data = Array(size);
     tensor.isRandom = range;
     return tensor;
 }
 
 const zerosTensor = (dim) => {
+    const data = Array(dimSize(dim));
+    data[data.length - 1] = undefined;
     return {
-        dim,
+        dim, data,
         get(index) {
             if (!(index instanceof Array)) return this.get([index]);
             const i = createIdx(index, this.dim);
-            if (!this.data) this.data = Array(dimSize(dim));
             if (this.data[i] === undefined) {
-                if (this.isRandom) this.data[i] = this.isRandom * (Math.random() * 2 - 1);
-                else this.data[i] = 0;
+                if (this.isRandom) {
+                    this.data[i] = this.isRandom * (Math.random() * 2 - 1);
+                } else this.data[i] = 0;
             }
             return this.data[i];
         },
@@ -34,10 +34,12 @@ const zerosTensor = (dim) => {
         },
         set_byDataIdx(dataIdx, value) {
             if (typeof value !== 'number') throw `All members in a tensor must be numbers (received: ${value})!`;
-            if (!this.data) {
-                this.data = Array(dimSize(dim));
+            try {
+                return this.data[dataIdx] = value;
+            } catch (e) {
+                console.log(e);
+                throw [dataIdx, this.data.length, value];
             }
-            return this.data[dataIdx] = value;
         }
     };
 }

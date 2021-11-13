@@ -43,12 +43,12 @@ window.onload = function () {
 };
 
 const restart = (ctx) => {
-    autoencoder = newQuadraticNeuralNet([96 * 96 * 4, 1, 96 * 96 * 4], 1);
+    autoencoder = newNeuralNet([96 * 96, 1000, 100, 10, 100, 1000, 96 * 96], 1);
 
     start(ctx);
 }
 
-const numPokemon = 2;
+const numPokemon = 3;
 
 
 const start = (ctx) => {
@@ -76,19 +76,39 @@ const drawLoop = (ctx) => {
     for (let p = 0; p < numPokemon; p++) {
         const encodedImage = fakeImages[p];
         imageData = ctx.getImageData(96 * p, 0, 96, 96);
-        encodedImage.forEach((o, i) => imageData.data[i] = Math.floor(o * 256));
+        encodedImage.forEach((o, i) => {
+            imageData.data[4 * i] = Math.floor(o * 256)
+            imageData.data[4 * i + 1] = Math.floor(o * 256)
+            imageData.data[4 * i + 2] = Math.floor(o * 256)
+            imageData.data[4 * i + 3] = 255;
+        });
         ctx.putImageData(imageData, 96 * p, 0);
     }
     imageData = ctx.getImageData(0, 96, 96, 96);
-    fakeImage.forEach((o, i) => imageData.data[i] = Math.floor(o * 256));
+    fakeImage.forEach((o, i) => {
+        imageData.data[4 * i] = Math.floor(o * 256)
+        imageData.data[4 * i + 1] = Math.floor(o * 256)
+        imageData.data[4 * i + 2] = Math.floor(o * 256)
+        imageData.data[4 * i + 3] = 255;
+    });
     ctx.putImageData(imageData, 0, 96);
 
     imageData = ctx.getImageData(96, 96, 96, 96);
-    realImage.forEach((o, i) => imageData.data[i] = Math.floor(o * 256));
+    realImage.forEach((o, i) => {
+        imageData.data[4 * i] = Math.floor(o * 256)
+        imageData.data[4 * i + 1] = Math.floor(o * 256)
+        imageData.data[4 * i + 2] = Math.floor(o * 256)
+        imageData.data[4 * i + 3] = 255;
+    });
     ctx.putImageData(imageData, 96, 96);
 
     imageData = ctx.getImageData(96 * 2, 96, 96, 96);
-    realFakeImage.forEach((o, i) => imageData.data[i] = Math.floor(o * 256));
+    realFakeImage.forEach((o, i) => {
+        imageData.data[4 * i] = Math.floor(o * 256)
+        imageData.data[4 * i + 1] = Math.floor(o * 256)
+        imageData.data[4 * i + 2] = Math.floor(o * 256)
+        imageData.data[4 * i + 3] = 255;
+    });
     ctx.putImageData(imageData, 96 * 2, 96);
 }
 
@@ -103,7 +123,14 @@ const initframe = (ctx) => {
 
                 ctx.drawImage(image, 0, 0);
                 const imageData = ctx.getImageData(0, 0, 96, 96);
-                inputImage = [...imageData.data].map(d => d / 255);
+                inputImage = [];
+                for (let i = 0; i < 96; i++) {
+                    for (let j = 0; j < 96; j++) {
+                        const index = j + 96 * i;
+                        inputImage[index] = (imageData.data[4 * index] + imageData.data[4 * index + 1] + imageData.data[4 * index + 2]) / 255 / 3;
+                    }
+                }
+                // inputImage = [...imageData.data].map(d => d / 255);
             }
         }
         if (loaded) {
@@ -136,16 +163,16 @@ const makeframe = (ctx) => {
     console.log(autoencoder.totalError);
 
     if (backprop) {
-        autoencoder.backPropMulti(pokemon, pokemon, 0.1);
+        autoencoder.backPropMulti(pokemon, pokemon, 0.01);
     }
-    if (mutate) {
-        if (!best || best.totalError > autoencoder.totalError) {
-            console.log("%cYEE", "color:red");
-            best = autoencoder;
-        }
+    // if (mutate) {
+    //     if (!best || best.totalError > autoencoder.totalError) {
+    //         console.log("%cYEE", "color:red");
+    //         best = autoencoder;
+    //     }
 
-        autoencoder = mutateNeuralNet(best, 0.1);
-    }
+    //     autoencoder = mutateNeuralNet(best, 0.1);
+    // }
 
     fakeImages = pokemon.map(pok => (best || autoencoder).pass(pok));
 
@@ -154,12 +181,12 @@ const makeframe = (ctx) => {
     realFakeImage = autoencoder.pass(realImage);
 
     const decoder = mutateNeuralNet(autoencoder, 0);
-    const encoder = mutateNeuralNet(autoencoder, 0);
     const mid = Math.floor(decoder.layerCounts.length / 2);
     decoder.layers = decoder.layers.slice(mid);
-    encoder.layers = encoder.layers.slice(0, mid);
     fakeImage = decoder.pass(Array(decoder.layerCounts[mid]).fill().map(() => Math.random()));
 
+    // const encoder = mutateNeuralNet(autoencoder, 0);
+    // encoder.layers = encoder.layers.slice(0, mid);
     // for (const poke of pokemon) {
     //     console.log(encoder.pass(poke));
     // }

@@ -10,7 +10,7 @@ const mutateNeuralNet = (oldNeuralNet, mutation = 1) => {
 const newNeuralNet = (layerCounts, randomRange = 1) => ({
     name: Math.random().toString(36).substring(2),
     layers: layerCounts.slice(1).map((layerCount, i) => newLinearLayer(layerCounts[i], layerCount, randomRange, ...(i === layerCounts.length - 2 ? [] : [ReLU, dReLU]))),
-    // layerCounts,
+    layerCounts,
     pass(input) {
         return this.layers.reduce((p, layer) => layer.pass(p), input.map(i => [i])).flat();
     },
@@ -34,12 +34,9 @@ const newNeuralNet = (layerCounts, randomRange = 1) => ({
                 A = this.layers[n].getAdjustments(A);
             }
         });
-        const maxGradient = 10;
-        const gradientLengthSquared = this.layers.reduce((p, layer) => p + layer.dbias.reduce((s, b) => s + b ** 2, 0) + layer.dweights.reduce((s, row) => s + row.reduce((s2, w) => s2 + w ** 2, 0), 0), 0);
-        const clipAmount = Math.min(1, maxGradient / Math.sqrt(gradientLengthSquared));
-        // const clipAmount = 1;
+        this.layers.forEach(layer => layer.clipGradient(10));
         for (let n = this.layers.length - 1; n >= 0; n--) {
-            this.layers[n].adjust(clipAmount * alpha / inputs.length);
+            this.layers[n].adjust(alpha / inputs.length * Math.log(this.totalError + 1));
         }
     }
 });
@@ -47,6 +44,9 @@ const newNeuralNet = (layerCounts, randomRange = 1) => ({
 const newQuadraticNeuralNet = (layerCounts, randomRange = 1) => {
     const neuralNet = newNeuralNet(layerCounts, randomRange);
     neuralNet.layers = layerCounts.slice(1).map((layerCount, i) => newQuadraticLayer(layerCounts[i], layerCount, randomRange));
+    neuralNet.pass = function (input) {
+        return this.layers.reduce((p, layer) => layer.pass(p), input);
+    }
     return neuralNet;
 };
 
@@ -76,6 +76,14 @@ const newLinearLayer = (inputSize, outputSize, randomRange, sigma = x => x, dsig
         this.weights = this.weights.map((row, i) => row.map((weight, j) => weight - alpha * this.dweights[i][j]));
         this.dbias = undefined;
         this.dweights = undefined;
+    },
+    clipGradient(maxGradient) {
+        const gradientLengthSquared = this.dbias.reduce((s, b) => s + b ** 2, 0) + this.dweights.reduce((s, row) => s + row.reduce((s2, w) => s2 + w ** 2, 0), 0);
+        const clipAmount = Math.min(1, maxGradient / Math.sqrt(gradientLengthSquared));
+        if (clipAmount < 1) {
+            this.dbias = this.dbias.map((b) => [b[0] * clipAmount]);
+            this.dweights = this.dweights.map((row) => row.map((w) => w * clipAmount));
+        }
     }
 });
 
@@ -104,12 +112,15 @@ const newQuadraticLayer = (inputSize, outputSize, randomRange) => ({
     },
     adjust(alpha) {
         this.a = elementWise([outputSize, inputSize, inputSize], ([i, j, k]) => this.a.get([i, j, k]) - alpha * this.da.get([i, j, k]));
-        this.a = elementWise([outputSize, inputSize], ([i, j]) => this.b.get([i, j]) - alpha * this.db.get([i, j]));
-        this.a = elementWise([outputSize], ([i]) => this.c.get([i]) - alpha * this.dc.get([i]));
+        this.b = elementWise([outputSize, inputSize], ([i, j]) => this.b.get([i, j]) - alpha * this.db.get([i, j]));
+        this.c = elementWise([outputSize], ([i]) => this.c.get([i]) - alpha * this.dc.get([i]));
         delete this.da;
         delete this.db;
         delete this.dc;
     },
+    clipGradient() {
+        // dont do anything
+    }
 });
 
 // Incomplete
@@ -174,3 +185,11 @@ const dclip = y => y === 1 || y === 0 ? 0 : 1;
 
 const lrelu = (alpha) => x => x > 0 ? x : alpha * x;
 const dlrelu = (alpha) => y => y > 0 ? 1 : alpha;
+
+const tanh = x => {
+    const ep = Math.exp(x);
+    const em = Math.exp(-x);
+    return (ep - em) / (ep + em);
+}
+
+const dtanh = y => 1 - y ** 2;
