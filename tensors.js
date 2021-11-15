@@ -1,7 +1,9 @@
 const newTensor = (dim, data) => {
     const size = dimSize(dim);
     if (size !== data.length) throw `${dim} (size: ${size}) does not match data size: ${data.length}!`;
-    if (data.some(d => !(d instanceof Number))) throw `All members in a tensor must be numbers!`;
+    for (const d of data) {
+        if (typeof d !== 'number') throw `All members in a tensor must be numbers! (Received: ${d})`;
+    }
     const tensor = zerosTensor(dim);
     tensor.data = data;
     return tensor;
@@ -20,7 +22,7 @@ const zerosTensor = (dim) => {
         dim,
         data,
         get(index) {
-            if (!(index instanceof Array)) return this.get([index]);
+            if (typeof index !== 'object') return this.get([index]);
             const i = createIdx(index, this.dim);
             if (this.data[i] === undefined) {
                 if (this.isRandom) {
@@ -29,13 +31,22 @@ const zerosTensor = (dim) => {
             }
             return this.data[i];
         },
+        get_default(index, default_value) {
+            if (typeof index !== 'object') return this.get([index]);
+            try {
+                createIdx(index, this.dim);
+            } catch (e) {
+                return default_value;
+            }
+            return this.get(index);
+        },
         set(index, value) {
             if (typeof index !== 'object') return this.set([index], value);
             return this.set_byDataIdx(createIdx(index, this.dim), value);
         },
         set_byDataIdx(dataIdx, value) {
-            if (typeof value !== 'number') throw `All members in a tensor must be numbers (received: ${value})!`;
-            return this.data[dataIdx] = value;
+            if (typeof value !== 'number') throw `All members in a tensor must be numbers! (Received: ${value})!`;
+            this.data[dataIdx] = value;
         },
         map(mapFunc) {
             return newTensor(this.dim, data.map(mapFunc));
@@ -48,13 +59,32 @@ const createIdx = (index, dim) => {
     for (const [i, idx] of index.entries()) {
         if (idx < 0) throw `${idx} is out of range (min: 0)!`;
         if (idx >= dim[i]) throw `${idx} is out of range (max: ${dim[i] - 1})!`;
+        if (idx % 1 !== 0) throw `${idx} is not an integer!`;
     }
     return index.reduce((p, idx, i) => p * dim[i] + idx, 0);
 }
 
 const recreateIdx = (i, dim) => {
-    const newDim = [...dim].reverse();
-    return newDim.reduce((p, d) => [Math.floor(p[0] / d), [p[0] % d, ...p[1]]], [i, []])[1];
+    const index = Array(dim.length - 1);
+    for (let idx = dim.length - 1; idx >= 0; idx--) {
+        index[idx] = i % dim[idx];
+        i = Math.floor(i / dim[idx]);
+    }
+    return index;
+}
+
+const addToIdx = (index, dim) => {
+    let d = index.length - 1;
+    while (d >= 0) {
+        index[d]++;
+        if (index[d] >= dim[d]) {
+            index[d] = 0;
+            d--;
+            continue;
+        }
+        return index;
+    }
+    return index;
 }
 
 const dimSize = (dim) => dim.reduce((p, c) => p * c, 1);
@@ -62,9 +92,10 @@ const dimSize = (dim) => dim.reduce((p, c) => p * c, 1);
 const elementWise = (dim, func) => {
     const tensor = zerosTensor(dim);
     const size = dimSize(dim);
+    let index = recreateIdx(0, dim);
     for (let i = 0; i < size; i++) {
-        const index = recreateIdx(i, dim);
         tensor.set_byDataIdx(i, func(index));
+        index = addToIdx(index, dim);
     }
     return tensor;
 }
@@ -72,9 +103,10 @@ const elementWise = (dim, func) => {
 const sumOverIndices = (dim, func) => {
     let sum = 0;
     const size = dimSize(dim);
+    let index = recreateIdx(0, dim);
     for (let i = 0; i < size; i++) {
-        const index = recreateIdx(i, dim);
         sum += func(index);
+        index = addToIdx(index, dim);
     }
     return sum;
 }
