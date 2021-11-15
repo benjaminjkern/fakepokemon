@@ -44,23 +44,39 @@ window.onload = function() {
 
 const restart = (ctx) => {
     // autoencoder = newNeuralNet([96 * 96, 1000, 100, 10, 100, 1000, 96 * 96], 1);
-    // autoencoder = newConvolutionalNeuralNet([
-    //     { channels: 1, kernelSpecs: { inputSize: [96, 96], kernelSize: [10, 10] } },
-    //     { channels: 5, kernelSpecs: { kernelSize: [5, 5] } },
-    //     { channels: 10 }
-    // ]);
 
+    autoencoder = newConvolutionalNeuralNet(1, [96, 96], [
+        { channels: 3, kernelSpecs: { kernelSize: [20, 20], padding: 0, stride: 5 } },
+        { channels: 5, kernelSpecs: { kernelSize: [16, 16], padding: 0, stride: 2 }, },
+        { channels: 3, kernelSpecs: { kernelSize: [16, 16], padding: 15, innerPadding: 2 } },
+        { channels: 1, kernelSpecs: { kernelSize: [20, 20], padding: 12, innerPadding: 5 } },
+    ]);
+
+    // autoencoder.layers[3].bias[0] = 0;
+
+    // autoencoder = newConvolutionalNeuralNet(10, [2, 2], [
+    //     { channels: 1, kernelSpecs: { kernelSize: [50, 50], padding: 49, innerPadding: 45 } }
+    // ]);
     // console.log(autoencoder);
 
-    const testNet = newConvolutionalNeuralNet([
-        { channels: 1, kernelSpecs: { inputSize: [10, 10], kernelSize: [5, 5], padding: 4 } },
-        { channels: 5, kernelSpecs: { kernelSize: [5, 5], stride: 2 } },
-        { channels: 5, kernelSpecs: { kernelSize: [5, 5] } },
-        { channels: 10 }
-    ]);
-    console.log(testNet.pass(randomTensor([10, 10, 1])));
+    // const testNet = newConvolutionalNeuralNet(1, [10, 10], [
+    //     { channels: 5, kernelSpecs: { kernelSize: [2, 2], padding: 4 } },
+    //     { channels: 10, kernelSpecs: { kernelSize: [5, 5], padding: 2 } },
+    //     { channels: 15, kernelSpecs: { kernelSize: [5, 5], padding: } },
+    //     { channels: 20, kernelSpecs: { kernelSize: [3, 3] } },
+    // ]);
+    // const input = randomTensor([10, 10, 1]);
+    // console.log(testNet.pass(input));
 
-    // start(ctx);
+    // const testNet = newConvolutionalNeuralNet(1, [2, 2], [
+    //     { channels: 1, kernelSpecs: { kernelSize: [2, 2], padding: 1 } },
+    // ]);
+    // const input = randomTensor([2, 2, 1]);
+    // const dotProduct = sumOverIndices([2, 2, 1], ([m, n, i]) => input.get([m, n, i]) * testNet.layers[0].kernels[0][0].kernel.get([m, n]));
+    // console.log(dotProduct + testNet.layers[0].bias[0]);
+    // console.log(testNet.pass(input));
+
+    start(ctx);
 }
 
 const numPokemon = 3;
@@ -91,19 +107,19 @@ const drawLoop = (ctx) => {
     for (let p = 0; p < numPokemon; p++) {
         const encodedImage = fakeImages[p];
         imageData = ctx.getImageData(96 * p, 0, 96, 96);
-        encodedImage.forEach(mapToBlackAndWhite(imageData));
+        encodedImage.data.forEach(mapToBlackAndWhite(imageData));
         ctx.putImageData(imageData, 96 * p, 0);
     }
     imageData = ctx.getImageData(0, 96, 96, 96);
-    fakeImage.forEach(mapToBlackAndWhite(imageData));
+    fakeImage.data.forEach(mapToBlackAndWhite(imageData));
     ctx.putImageData(imageData, 0, 96);
 
     imageData = ctx.getImageData(96, 96, 96, 96);
-    realImage.forEach(mapToBlackAndWhite(imageData));
+    realImage.data.forEach(mapToBlackAndWhite(imageData));
     ctx.putImageData(imageData, 96, 96);
 
     imageData = ctx.getImageData(96 * 2, 96, 96, 96);
-    realFakeImage.forEach(mapToBlackAndWhite(imageData));
+    realFakeImage.data.forEach(mapToBlackAndWhite(imageData));
     ctx.putImageData(imageData, 96 * 2, 96);
 }
 
@@ -136,7 +152,8 @@ const initframe = (ctx) => {
             }
         }
         if (loaded) {
-            pokemon[pokemon.length] = inputImage;
+            pokemon[pokemon.length] = newTensor([96, 96, 1], inputImage);
+            pokemon[pokemon.length - 1].name = pokemon.length;
             loaded = false;
             if (pokemon.length >= numPokemon * 2)
                 loading = false;
@@ -160,10 +177,11 @@ const makeframe = (ctx) => {
     }
     controlVars.killed = false;
 
-    autoencoder.totalError = autoencoder.error(pokemon, pokemon);
-    console.log(autoencoder.totalError);
+    autoencoder.error(pokemon, pokemon);
+    console.log(autoencoder.lastError);
 
-    autoencoder.backPropMulti(pokemon, pokemon, 0.01);
+    autoencoder.backPropMulti(pokemon, pokemon, 0.1);
+    // console.log(autoencoder);
 
     fakeImages = pokemon.map(pok => autoencoder.pass(pok));
 
@@ -171,10 +189,15 @@ const makeframe = (ctx) => {
 
     realFakeImage = autoencoder.pass(realImage);
 
-    const decoder = mutateNeuralNet(autoencoder, 0);
-    const mid = Math.floor(decoder.layerCounts.length / 2);
+    const decoder = {...autoencoder };
+    const mid = Math.floor(decoder.layers.length / 2);
     decoder.layers = decoder.layers.slice(mid);
-    fakeImage = decoder.pass(Array(decoder.layerCounts[mid]).fill().map(() => Math.random()));
+    const randomInput = randomTensor([1, 1, decoder.layers[0].inputChannels])
+    fakeImage = decoder.pass(randomInput);
+
+    // const randomInput = randomTensor([...autoencoder.layers[0].kernelSpecs.inputSize, autoencoder.layers[0].inputChannels]);
+    // console.log(randomInput);
+    // fakeImage = autoencoder.pass(randomInput);
 
     // const encoder = mutateNeuralNet(autoencoder, 0);
     // encoder.layers = encoder.layers.slice(0, mid);
