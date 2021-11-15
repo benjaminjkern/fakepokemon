@@ -22,8 +22,11 @@ const newNeuralNet = (layers) => ({
             }
         });
         // this.layers.forEach(layer => layer.clipGradient(10));
+        const maxGradient = 10;
+        const gradientLength = Math.sqrt(this.layers.reduce((p, layer) => p + layer.gradientLengthSquared(), 0));
+        const clipAmount = Math.min(1, maxGradient / gradientLength);
         for (let n = this.layers.length - 1; n >= 0; n--) {
-            this.layers[n].adjust(alpha / inputs.length * Math.log(this.lastError + 1));
+            this.layers[n].adjust(clipAmount * alpha / inputs.length * Math.log(this.lastError + 1));
         }
     }
 });
@@ -49,7 +52,8 @@ const newQuadraticNeuralNet = (layerCounts, randomRange = 1) => {
 const newConvolutionalNeuralNet = (kernelLayerSpecs, randomRange = 1) => {
     const neuralNet = newNeuralNet([]);
     for (const [i, { channels, kernelSpecs }] of kernelLayerSpecs.slice(0, kernelLayerSpecs.length - 1).entries()) {
-        this.layers.push(newKernelLayer(channels, kernelLayerSpecs[i + 1], kernelSpecs, ReLU, randomRange))
+        if (kernelSpecs.inputSize === undefined) kernelSpecs.inputSize = neuralNet.layers[neuralNet.layers.length - 1].kernelSpecs.outputSize;
+        neuralNet.layers.push(newKernelLayer(channels, kernelLayerSpecs[i + 1].channels, kernelSpecs, ReLU, randomRange))
     }
     return neuralNet;
 }
@@ -84,14 +88,9 @@ const newLinearLayer = (inputSize, outputSize, randomRange = 1, sigma = linear) 
         delete this.db;
         delete this.da;
     },
-    // clipGradient(maxGradient) {
-    //     const gradientLengthSquared = sumOverIndices([outputSize], ([i]) => this.da.get(i) ** 2) + sumOverIndices([outputSize, inputSize], ([i, j]) => this.db.get([i, j]) ** 2);
-    //     const clipAmount = Math.min(1, maxGradient / Math.sqrt(gradientLengthSquared));
-    //     if (clipAmount < 1) {
-    //         this.db = elementWise([outputSize, inputSize], ([i, j]) => this.db.get([i, j]) * clipAmount);
-    //         this.da = elementWise([outputSize], ([i]) => this.da.get(i) * clipAmount);
-    //     }
-    // }
+    gradientLengthSquared() {
+        return sumOverIndices([outputSize], ([i]) => this.da.get(i) ** 2) + sumOverIndices([outputSize, inputSize], ([i, j]) => this.db.get([i, j]) ** 2);
+    }
 });
 
 const newQuadraticLayer = (inputSize, outputSize, randomRange = 1) => ({
@@ -99,12 +98,12 @@ const newQuadraticLayer = (inputSize, outputSize, randomRange = 1) => ({
     b: randomTensor([outputSize, inputSize], randomRange),
     a: randomTensor([outputSize], randomRange),
     pass(input) {
-        this.lastInput = [...input];
+        this.lastInput = input;
         this.lastOutput = elementWise([outputSize], ([i]) =>
-            sumOverIndices([inputSize, inputSize], ([j, k]) => this.c.get([i, j, k]) * input[j] * input[k]) +
-            sumOverIndices([inputSize], ([j]) => this.b.get([i, j]) * input[j]) +
+            sumOverIndices([inputSize, inputSize], ([j, k]) => this.c.get([i, j, k]) * input.get(j) * input.get(k)) +
+            sumOverIndices([inputSize], ([j]) => this.b.get([i, j]) * input.get(j)) +
             this.a.get(i)
-        ).data;
+        );
         return this.lastOutput;
     },
     getAdjustments(A) {
@@ -112,10 +111,10 @@ const newQuadraticLayer = (inputSize, outputSize, randomRange = 1) => ({
         if (!this.db) this.db = zerosTensor([outputSize, inputSize]);
         if (!this.da) this.da = zerosTensor([outputSize]);
 
-        this.dc = elementWise([outputSize, inputSize, inputSize], ([i, j, k]) => A[i] * this.lastInput[j] * this.lastInput[k] + this.dc.get([i, j, k]));
-        this.db = elementWise([outputSize, inputSize], ([i, j]) => A[i] * this.lastInput[j] + this.db.get([i, j]));
+        this.dc = elementWise([outputSize, inputSize, inputSize], ([i, j, k]) => A.get(i) * this.lastInput.get(j) * this.lastInput.get(k) + this.dc.get([i, j, k]));
+        this.db = elementWise([outputSize, inputSize], ([i, j]) => A.get(i) * this.lastInput.get(j) + this.db.get([i, j]));
         this.da = elementWise([outputSize], ([i]) => A[i] + this.da.get(i));
-        return elementWise([inputSize], ([j]) => sumOverIndices([outputSize], ([i]) => A[i] * (this.b.get([i, j]) + sumOverIndices([inputSize], ([k]) => (this.c.get([i, j, k]) + this.c.get([i, k, j])) * this.lastInput[k])))).data;
+        return elementWise([inputSize], ([j]) => sumOverIndices([outputSize], ([i]) => A.get(i) * (this.b.get([i, j]) + sumOverIndices([inputSize], ([k]) => (this.c.get([i, j, k]) + this.c.get([i, k, j])) * this.lastInput.get(k))))).data;
     },
     adjust(alpha) {
         this.c = elementWise([outputSize, inputSize, inputSize], ([i, j, k]) => this.c.get([i, j, k]) - alpha * this.dc.get([i, j, k]));
@@ -125,33 +124,38 @@ const newQuadraticLayer = (inputSize, outputSize, randomRange = 1) => ({
         delete this.db;
         delete this.da;
     },
+    gradientLengthSquared() {
+        // TODO: Implement
+        return 1;
+    }
 });
 
 const newKernelLayer = (inputChannels, outputChannels, kernelSpecs, sigma, randomRange = 1) => {
     const processedKernelSpecs = {
         ...kernelSpecs,
-        padding: typeof kernelSpecs.padding === 'object' ? kernelSpecs.padding : [kernelSpecs.padding, kernelSpecs.padding],
-        innerPadding: typeof kernelSpecs.innerPadding === 'object' ? kernelSpecs.innerPadding : [kernelSpecs.innerPadding, kernelSpecs.innerPadding],
-        stride: typeof kernelSpecs.stride === 'object' ? kernelSpecs.stride : [kernelSpecs.stride, kernelSpecs.stride],
-        trueInputSize: [0, 1].map(i => 2 * this.padding[i] + this.inputSize[i] + this.innerPadding[i] * (this.inputSize[i] - 1)),
-        outputSize: [0, 1].map(i => 1 + Math.floor((this.trueInputSize[i] - this.kernelSize[i]) / this.stride[i])),
     };
+    default2d(processedKernelSpecs, 'padding', 0);
+    default2d(processedKernelSpecs, 'innerPadding', 0);
+    default2d(processedKernelSpecs, 'stride', 1);
+    processedKernelSpecs.trueInputSize = [0, 1].map(i => 2 * processedKernelSpecs.padding[i] + processedKernelSpecs.inputSize[i] + processedKernelSpecs.innerPadding[i] * (processedKernelSpecs.inputSize[i] - 1));
+    processedKernelSpecs.outputSize = [0, 1].map(i => 1 + Math.floor((processedKernelSpecs.trueInputSize[i] - processedKernelSpecs.kernelSize[i]) / processedKernelSpecs.stride[i]));
     processedKernelSpecs.LField = zerosTensor([...processedKernelSpecs.trueInputSize, 2]);
     for (let r = 0; r < processedKernelSpecs.inputSize[0]; r++) {
         for (let s = 0; s < processedKernelSpecs.inputSize[0]; s++) {
-            processedKernelSpecs.LField.set([processedKernelSpecs.padding[0] + x * processedKernelSpecs.innerPadding[0], processedKernelSpecs.padding[1] + y * processedKernelSpecs.innerPadding[1], 0], r);
-            processedKernelSpecs.LField.set([processedKernelSpecs.padding[0] + x * processedKernelSpecs.innerPadding[0], processedKernelSpecs.padding[1] + y * processedKernelSpecs.innerPadding[1], 1], s);
+            processedKernelSpecs.LField.set([processedKernelSpecs.padding[0] + r * processedKernelSpecs.innerPadding[0], processedKernelSpecs.padding[1] + s * processedKernelSpecs.innerPadding[1], 0], r);
+            processedKernelSpecs.LField.set([processedKernelSpecs.padding[0] + r * processedKernelSpecs.innerPadding[0], processedKernelSpecs.padding[1] + s * processedKernelSpecs.innerPadding[1], 1], s);
         }
     }
 
     return {
+        kernelSpecs: processedKernelSpecs,
         kernels: Array(outputChannels).fill().map(() => Array(inputChannels).fill().map(() => newKernel(processedKernelSpecs, randomRange))),
         bias: Array(outputChannels).fill().map(() => initRand(randomRange)),
         sigma,
         pass(inputTensor) {
             if (inputTensor.dim === undefined) inputTensor = newTensor([1, 1, inputTensor.length], inputTensor);
             // needs to return (outputWidth x outputHeight) x outputChannels
-            const outputtedKernelValues = this.kernels.map(outputs => outputs.map(kernel => kernel.pass(inputTensor)));
+            const outputtedKernelValues = this.kernels.map(outputs => outputs.map((kernel, inputChannel) => kernel.pass(inputTensor, inputChannel)));
             this.lastOutput = elementWise([...processedKernelSpecs.outputSize, outputChannels], ([i, ox, oy]) =>
                 this.sigma(
                     this.bias[i] +
@@ -180,9 +184,18 @@ const newKernelLayer = (inputChannels, outputChannels, kernelSpecs, sigma, rando
                 }
             }
             delete this.dbias;
+        },
+        gradientLengthSquared() {
+            // TODO: Implement
+            return 1;
         }
     }
 };
+
+const default2d = (kernelSpecs, attribute, defaultValue) => {
+    if (kernelSpecs[attribute] === undefined) kernelSpecs[attribute] = [defaultValue, defaultValue];
+    if (typeof kernelSpecs[attribute] === 'number') kernelSpecs[attribute] = [kernelSpecs[attribute], kernelSpecs[attribute]];
+}
 
 const newPoolingLayer = (inputChannels, outputChannels, poolFunc) => {};
 
@@ -190,13 +203,13 @@ const newKernel = (kernelSpecs, randomRange) => {
     return {
         ...kernelSpecs,
 
-        kernel: randomTensor(this.kernelSize, randomRange),
-        pass(inputTensor) {
+        kernel: randomTensor(kernelSpecs.kernelSize, randomRange),
+        pass(inputTensor, channel) {
             // Add inner and outer padding
             this.lastProcessedInput = zerosTensor(this.trueInputSize);
             for (let x = 0; x < inputTensor.dim[0]; x++) {
                 for (let y = 0; y < inputTensor.dim[1]; y++) {
-                    this.lastProcessedInput.set([this.padding[0] + x * this.innerPadding[0], this.padding[1] + y * this.innerPadding[1]], inputTensor.get([x, y]));
+                    this.lastProcessedInput.set([this.padding[0] + x * this.innerPadding[0], this.padding[1] + y * this.innerPadding[1]], inputTensor.get([x, y, channel]));
                 }
             }
             return elementWise(this.outputSize, ([ox, oy]) =>
@@ -206,9 +219,11 @@ const newKernel = (kernelSpecs, randomRange) => {
             );
         },
         getAdjustments(A, i) {
+            if (!this.dkernel) this.dkernel = zerosTensor(this.kernelSize);
+
             this.dkernel = elementWise(this.outputSize, ([ox, oy]) =>
                 sumOverIndices(this.kernelSize, ([x, y]) =>
-                    A.get([i, ox, oy]) * this.lastProcessedInput.get([x + this.stride[0] * ox, y + this.stride[1] * oy])
+                    this.dkernel.get([x, y]) + A.get([i, ox, oy]) * this.lastProcessedInput.get([x + this.stride[0] * ox, y + this.stride[1] * oy])
                 )
             );
             this.adjustment = elementWise([...this.outputSize, ...this.inputSize], ([ox, oy, r, s]) => sumOverIndices(this.kernelSize, ([x, y]) =>
@@ -220,7 +235,7 @@ const newKernel = (kernelSpecs, randomRange) => {
             delete this.dkernel;
         },
         L(ox, oy, x, y, r, s) {
-            return kernelSpecs.LField.get([x + this.stride[0] * ox, y + this.stride[1] * oy, 0]) === r && LField.get([x + this.stride[0] * ox, y + this.stride[1] * oy, 1]) === s;
+            return this.LField.get([x + this.stride[0] * ox, y + this.stride[1] * oy, 0]) === r && this.LField.get([x + this.stride[0] * ox, y + this.stride[1] * oy, 1]) === s;
         }
     }
 };
