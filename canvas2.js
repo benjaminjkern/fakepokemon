@@ -43,9 +43,24 @@ window.onload = function() {
 };
 
 const restart = (ctx) => {
-    autoencoder = newNeuralNet([96 * 96, 1000, 100, 10, 100, 1000, 96 * 96], 1);
+    // autoencoder = newNeuralNet([96 * 96, 1000, 100, 10, 100, 1000, 96 * 96], 1);
+    // autoencoder = newConvolutionalNeuralNet([
+    //     { channels: 1, kernelSpecs: { inputSize: [96, 96], kernelSize: [10, 10] } },
+    //     { channels: 5, kernelSpecs: { kernelSize: [5, 5] } },
+    //     { channels: 10 }
+    // ]);
 
-    start(ctx);
+    // console.log(autoencoder);
+
+    const testNet = newConvolutionalNeuralNet([
+        { channels: 1, kernelSpecs: { inputSize: [10, 10], kernelSize: [5, 5], padding: 4 } },
+        { channels: 5, kernelSpecs: { kernelSize: [5, 5], stride: 2 } },
+        { channels: 5, kernelSpecs: { kernelSize: [5, 5] } },
+        { channels: 10 }
+    ]);
+    console.log(testNet.pass(randomTensor([10, 10, 1])));
+
+    // start(ctx);
 }
 
 const numPokemon = 3;
