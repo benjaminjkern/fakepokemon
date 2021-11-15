@@ -5,8 +5,7 @@ const newNeuralNet = (layers) => ({
     pass(input) {
         if (input.name && this.cache[input.name]) return this.cache[input.name];
         if (!input.dim) return this.pass(newTensor([input.length], input));
-        const result = this.layers.reduce((p, layer) => layer.pass(p)
-            , input);
+        const result = this.layers.reduce((p, layer) => layer.pass(p), input);
         if (input.name) this.cache[input.name] = result;
         return result;
     },
@@ -24,11 +23,12 @@ const newNeuralNet = (layers) => ({
             let A = elementWise(input.dim, (i) => result.get(i) - targets[j].get(i));
 
             for (let n = this.layers.length - 1; n >= 0; n--) {
+                console.log(A);
                 A = this.layers[n].getAdjustments(A);
             }
         });
         // this.layers.forEach(layer => layer.clipGradient(10));
-        const maxGradient = 10;
+        const maxGradient = 1;
         const gradientLength = Math.sqrt(this.layers.reduce((p, layer) => p + layer.gradientLengthSquared(), 0));
 
         this.cache = {};
@@ -73,7 +73,7 @@ const newConvolutionalNeuralNet = (inputChannels, inputSize, kernelLayerSpecs, r
             kernelSpecs.inputSize = neuralNet.layers[neuralNet.layers.length - 1].kernelSpecs.outputSize;
             startChannels = kernelLayerSpecs[i - 1].channels;
         }
-        neuralNet.layers.push(newKernelLayer(startChannels, channels, kernelSpecs, lrelu(0.1), randomRange));
+        neuralNet.layers.push(newKernelLayer(startChannels, channels, kernelSpecs, i === kernelLayerSpecs.length - 1 ? linear : ReLU, randomRange));
         console.log(neuralNet.layers[neuralNet.layers.length - 1].kernelSpecs.outputSize, channels, channels * neuralNet.layers[neuralNet.layers.length - 1].kernelSpecs.outputSize[0] * neuralNet.layers[neuralNet.layers.length - 1].kernelSpecs.outputSize[1]);
     }
     return neuralNet;
@@ -101,7 +101,7 @@ const newLinearLayer = (inputSize, outputSize, randomRange = 1, sigma = linear) 
         this.db = elementWise([outputSize, inputSize], ([i, j]) => adjust.get(i) * this.lastInput.get(j) + this.db.get([i, j]));
         this.da = elementWise([outputSize], ([i]) => adjust.get(i) + this.da.get(i));
 
-        return elementWise([inputSize], ([j]) => sumOverIndices([outputSize], ([i]) => adjust.get(i) * this.b.get([i, j]))).data;
+        return elementWise([inputSize], ([j]) => sumOverIndices([outputSize], ([i]) => adjust.get(i) * this.b.get([i, j])));
     },
     adjust(alpha) {
         this.b = elementWise([outputSize, inputSize], ([i, j]) => this.b.get([i, j]) - alpha * this.db.get([i, j]));
@@ -111,6 +111,10 @@ const newLinearLayer = (inputSize, outputSize, randomRange = 1, sigma = linear) 
     },
     gradientLengthSquared() {
         return sumOverIndices([outputSize], ([i]) => this.da.get(i) ** 2) + sumOverIndices([outputSize, inputSize], ([i, j]) => this.db.get([i, j]) ** 2);
+    },
+    nudge(mutation) {
+        this.b = elementWise([outputSize, inputSize], ([i, j]) => this.b.get([i, j]) + mutation * (Math.random() * 2 - 1));
+        this.a = elementWise([outputSize], ([i]) => this.a.get([i]) + mutation * (Math.random() * 2 - 1));
     }
 });
 

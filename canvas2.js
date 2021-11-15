@@ -44,14 +44,14 @@ window.onload = function () {
 };
 
 const restart = (ctx) => {
-    // autoencoder = newNeuralNet([96 * 96, 1000, 100, 10, 100, 1000, 96 * 96], 1);
+    autoencoder = newLinearNeuralNet([96 * 96, 1000, 100, 10, 100, 1000, 96 * 96], 1);
 
-    autoencoder = newConvolutionalNeuralNet(1, [96, 96], [
-        { channels: 3, kernelSpecs: { kernelSize: [20, 20], padding: 0, stride: 5 } },
-        { channels: 5, kernelSpecs: { kernelSize: [16, 16], padding: 0, stride: 2 }, },
-        { channels: 3, kernelSpecs: { kernelSize: [16, 16], padding: 15, innerPadding: 2 } },
-        { channels: 1, kernelSpecs: { kernelSize: [20, 20], padding: 12, innerPadding: 5 } },
-    ]);
+    // autoencoder = newConvolutionalNeuralNet(1, [96, 96], [
+    //     { channels: 3, kernelSpecs: { kernelSize: [20, 20], padding: 0, stride: 5 } },
+    //     { channels: 5, kernelSpecs: { kernelSize: [16, 16], padding: 0, stride: 2 }, },
+    //     { channels: 3, kernelSpecs: { kernelSize: [16, 16], padding: 15, innerPadding: 2 } },
+    //     { channels: 1, kernelSpecs: { kernelSize: [20, 20], padding: 12, innerPadding: 5 } },
+    // ]);
 
     // autoencoder.layers[3].bias[0] = 0;
 
@@ -80,7 +80,7 @@ const restart = (ctx) => {
     start(ctx);
 }
 
-const numPokemon = 3;
+const numPokemon = 1;
 
 
 const start = (ctx) => {
@@ -88,7 +88,7 @@ const start = (ctx) => {
     if (!controlVars.killed) return;
     controlVars.kill = false;
 
-    canvas.width = 96 * numPokemon;
+    canvas.width = 96 * Math.max(3, numPokemon);
     canvas.height = 96 * 2;
 
     loading = true;
@@ -104,13 +104,14 @@ const drawLoop = (ctx) => {
 
     let imageData;
 
-    ctx.clearRect(0, 0, 96 * (numPokemon), 96 * 2);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (let p = 0; p < numPokemon; p++) {
         const encodedImage = fakeImages[p];
         imageData = ctx.getImageData(96 * p, 0, 96, 96);
         encodedImage.data.forEach(mapToBlackAndWhite(imageData));
         ctx.putImageData(imageData, 96 * p, 0);
     }
+
     imageData = ctx.getImageData(0, 96, 96, 96);
     fakeImage.data.forEach(mapToBlackAndWhite(imageData));
     ctx.putImageData(imageData, 0, 96);
@@ -153,7 +154,7 @@ const initframe = (ctx) => {
             }
         }
         if (loaded) {
-            pokemon[pokemon.length] = newTensor([96, 96, 1], inputImage);
+            pokemon[pokemon.length] = newTensor([96 * 96], inputImage);//newTensor([96, 96, 1], inputImage);
             pokemon[pokemon.length - 1].name = Math.random();
             loaded = false;
             if (pokemon.length >= numPokemon * 2)
@@ -187,7 +188,7 @@ const makeframe = (ctx) => {
         status.innerHTML = autoencoder.lastError + '<br>' + status.innerHTML;
     }
 
-    autoencoder.backPropMulti(pokemon, pokemon, 0.01);
+    autoencoder.backPropMulti(pokemon, pokemon, 0.1);
     // console.log(autoencoder);
 
     fakeImages = pokemon.map(pok => autoencoder.pass(pok));
@@ -199,7 +200,7 @@ const makeframe = (ctx) => {
     const decoder = { ...autoencoder };
     const mid = Math.floor(decoder.layers.length / 2);
     decoder.layers = decoder.layers.slice(mid);
-    const randomInput = randomTensor([1, 1, decoder.layers[0].inputChannels])
+    const randomInput = randomTensor([10])
     fakeImage = decoder.pass(randomInput);
 
     // const randomInput = randomTensor([...autoencoder.layers[0].kernelSpecs.inputSize, autoencoder.layers[0].inputChannels]);
