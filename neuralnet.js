@@ -5,11 +5,8 @@ const newNeuralNet = (layers) => ({
     pass(input) {
         if (input.name && this.cache[input.name]) return this.cache[input.name];
         if (!input.dim) return this.pass(newTensor([input.length], input));
-        const result = this.layers.reduce((p, layer) => {
-            const v = layer.pass(p);
-            // console.log(v);
-            return v;
-        }, input);
+        const result = this.layers.reduce((p, layer) => layer.pass(p)
+            , input);
         if (input.name) this.cache[input.name] = result;
         return result;
     },
@@ -33,15 +30,17 @@ const newNeuralNet = (layers) => ({
         // this.layers.forEach(layer => layer.clipGradient(10));
         const maxGradient = 10;
         const gradientLength = Math.sqrt(this.layers.reduce((p, layer) => p + layer.gradientLengthSquared(), 0));
+
+        this.cache = {};
         if (gradientLength === 0) {
-            console.log("Network has reached local minimum!");
+            this.layers.forEach(layer => layer.nudge(alpha / inputs.length * Math.log(this.lastError + 1)));
+            console.log("Network has reached local minimum! Nudging!");
             return;
         }
         const clipAmount = Math.min(1, maxGradient / gradientLength);
         for (let n = this.layers.length - 1; n >= 0; n--) {
             this.layers[n].adjust(clipAmount * alpha / inputs.length * Math.log(this.lastError + 1));
         }
-        this.cache = {};
     }
 });
 
@@ -74,7 +73,7 @@ const newConvolutionalNeuralNet = (inputChannels, inputSize, kernelLayerSpecs, r
             kernelSpecs.inputSize = neuralNet.layers[neuralNet.layers.length - 1].kernelSpecs.outputSize;
             startChannels = kernelLayerSpecs[i - 1].channels;
         }
-        neuralNet.layers.push(newKernelLayer(startChannels, channels, kernelSpecs, ReLU, randomRange));
+        neuralNet.layers.push(newKernelLayer(startChannels, channels, kernelSpecs, lrelu(0.1), randomRange));
         console.log(neuralNet.layers[neuralNet.layers.length - 1].kernelSpecs.outputSize, channels, channels * neuralNet.layers[neuralNet.layers.length - 1].kernelSpecs.outputSize[0] * neuralNet.layers[neuralNet.layers.length - 1].kernelSpecs.outputSize[1]);
     }
     return neuralNet;
@@ -209,6 +208,14 @@ const newKernelLayer = (inputChannels, outputChannels, kernelSpecs, sigma, rando
         },
         gradientLengthSquared() {
             return sumOverIndices([outputChannels], ([n]) => this.dbias.get(n) ** 2) + sumOverIndices([outputChannels, inputChannels], ([n, m]) => this.kernels[n][m].gradientLengthSquared());
+        },
+        nudge(mutation) {
+            for (let n = 0; n < outputChannels; n++) {
+                this.bias[n] += mutation * (Math.random() * 2 - 1);
+                for (let m = 0; m < inputChannels; m++) {
+                    this.kernels[n][m].nudge(mutation);
+                }
+            }
         }
     }
 };
@@ -218,7 +225,7 @@ const default2d = (kernelSpecs, attribute, defaultValue) => {
     if (typeof kernelSpecs[attribute] === 'number') kernelSpecs[attribute] = [kernelSpecs[attribute], kernelSpecs[attribute]];
 }
 
-const newPoolingLayer = (inputChannels, outputChannels, poolFunc) => {};
+const newPoolingLayer = (inputChannels, outputChannels, poolFunc) => { };
 
 const newKernel = (kernelSpecs, randomRange) => {
     return {
@@ -268,6 +275,11 @@ const newKernel = (kernelSpecs, randomRange) => {
         },
         gradientLengthSquared() {
             return sumOverIndices(this.kernelSize, ([x, y]) => this.dkernel.get([x, y]) ** 2);
+        },
+        nudge(mutation) {
+            elementWise(this.kernelSize, ([x, y]) => {
+                this.kernel.set([x, y], this.kernel.get([x, y]) + mutation * (Math.random() * 2 - 1));
+            });
         }
     }
 };
