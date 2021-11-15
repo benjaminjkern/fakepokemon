@@ -43,7 +43,7 @@ window.onload = function () {
 };
 
 const restart = (ctx) => {
-    autoencoder = newNeuralNet([96 * 96, 1000, 100, 10, 100, 1000, 96 * 96], 1);
+    autoencoder = newNeuralNet([96 * 96, 96 * 96 / 4, 96 * 96], 1);
 
     start(ctx);
 }
@@ -160,7 +160,8 @@ const makeframe = (ctx) => {
 
 
     autoencoder.totalError = autoencoder.error(pokemon, pokemon);
-    console.log(autoencoder.totalError);
+    const status = document.getElementById('status');
+    status.innerHTML = autoencoder.totalError + '<br>' + status.innerHTML;
 
     if (backprop) {
         autoencoder.backPropMulti(pokemon, pokemon, 0.01);
