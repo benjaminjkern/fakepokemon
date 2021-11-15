@@ -23,7 +23,7 @@ const image = new Image(96, 96);
 let testPokemon = [];
 let pokemon = [];
 
-window.onload = function () {
+window.onload = function() {
     canvas = document.getElementById('canvas');
     let ctx = canvas.getContext('2d');
 
@@ -31,11 +31,11 @@ window.onload = function () {
     //     start(ctx);
     // }
 
-    window.onkeydown = function (e) {
+    window.onkeydown = function(e) {
         keysDown[e.code] = true;
     }
 
-    window.onkeyup = function (e) {
+    window.onkeyup = function(e) {
         delete keysDown[e.code];
     }
 
@@ -76,40 +76,27 @@ const drawLoop = (ctx) => {
     for (let p = 0; p < numPokemon; p++) {
         const encodedImage = fakeImages[p];
         imageData = ctx.getImageData(96 * p, 0, 96, 96);
-        encodedImage.forEach((o, i) => {
-            imageData.data[4 * i] = Math.floor(o * 256)
-            imageData.data[4 * i + 1] = Math.floor(o * 256)
-            imageData.data[4 * i + 2] = Math.floor(o * 256)
-            imageData.data[4 * i + 3] = 255;
-        });
+        encodedImage.forEach(mapToBlackAndWhite(imageData));
         ctx.putImageData(imageData, 96 * p, 0);
     }
     imageData = ctx.getImageData(0, 96, 96, 96);
-    fakeImage.forEach((o, i) => {
-        imageData.data[4 * i] = Math.floor(o * 256)
-        imageData.data[4 * i + 1] = Math.floor(o * 256)
-        imageData.data[4 * i + 2] = Math.floor(o * 256)
-        imageData.data[4 * i + 3] = 255;
-    });
+    fakeImage.forEach(mapToBlackAndWhite(imageData));
     ctx.putImageData(imageData, 0, 96);
 
     imageData = ctx.getImageData(96, 96, 96, 96);
-    realImage.forEach((o, i) => {
-        imageData.data[4 * i] = Math.floor(o * 256)
-        imageData.data[4 * i + 1] = Math.floor(o * 256)
-        imageData.data[4 * i + 2] = Math.floor(o * 256)
-        imageData.data[4 * i + 3] = 255;
-    });
+    realImage.forEach(mapToBlackAndWhite(imageData));
     ctx.putImageData(imageData, 96, 96);
 
     imageData = ctx.getImageData(96 * 2, 96, 96, 96);
-    realFakeImage.forEach((o, i) => {
-        imageData.data[4 * i] = Math.floor(o * 256)
-        imageData.data[4 * i + 1] = Math.floor(o * 256)
-        imageData.data[4 * i + 2] = Math.floor(o * 256)
-        imageData.data[4 * i + 3] = 255;
-    });
+    realFakeImage.forEach(mapToBlackAndWhite(imageData));
     ctx.putImageData(imageData, 96 * 2, 96);
+}
+
+const mapToBlackAndWhite = (imageData) => (o, i) => {
+    imageData.data[4 * i] = Math.floor(o * 256)
+    imageData.data[4 * i + 1] = Math.floor(o * 256)
+    imageData.data[4 * i + 2] = Math.floor(o * 256)
+    imageData.data[4 * i + 3] = 255;
 }
 
 const initframe = (ctx) => {
@@ -158,23 +145,12 @@ const makeframe = (ctx) => {
     }
     controlVars.killed = false;
 
-
     autoencoder.totalError = autoencoder.error(pokemon, pokemon);
     console.log(autoencoder.totalError);
 
-    if (backprop) {
-        autoencoder.backPropMulti(pokemon, pokemon, 0.01);
-    }
-    // if (mutate) {
-    //     if (!best || best.totalError > autoencoder.totalError) {
-    //         console.log("%cYEE", "color:red");
-    //         best = autoencoder;
-    //     }
+    autoencoder.backPropMulti(pokemon, pokemon, 0.01);
 
-    //     autoencoder = mutateNeuralNet(best, 0.1);
-    // }
-
-    fakeImages = pokemon.map(pok => (best || autoencoder).pass(pok));
+    fakeImages = pokemon.map(pok => autoencoder.pass(pok));
 
     realImage = testPokemon[Math.floor(Math.random() * testPokemon.length)];
 

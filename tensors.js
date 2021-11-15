@@ -17,7 +17,8 @@ const zerosTensor = (dim) => {
     const data = Array(dimSize(dim));
     data[data.length - 1] = undefined;
     return {
-        dim, data,
+        dim,
+        data,
         get(index) {
             if (!(index instanceof Array)) return this.get([index]);
             const i = createIdx(index, this.dim);
@@ -34,12 +35,10 @@ const zerosTensor = (dim) => {
         },
         set_byDataIdx(dataIdx, value) {
             if (typeof value !== 'number') throw `All members in a tensor must be numbers (received: ${value})!`;
-            try {
-                return this.data[dataIdx] = value;
-            } catch (e) {
-                console.log(e);
-                throw [dataIdx, this.data.length, value];
-            }
+            return this.data[dataIdx] = value;
+        },
+        map(mapFunc) {
+            return newTensor(this.dim, data.map(mapFunc));
         }
     };
 }
