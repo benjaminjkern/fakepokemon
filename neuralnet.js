@@ -1,5 +1,35 @@
-const mutateNeuralNet = (oldNeuralNet, mutation = 1) => {
-    const newNet = newNeuralNet(oldNeuralNet.layerCounts, mutation);
+const newNeuralNet = (layers) => ({
+    name: Math.random().toString(36).substring(2),
+    layers,
+    pass(input) {
+        if (!input.dim) return this.pass(newTensor([input.length], input));
+        return this.layers.reduce((p, layer) => layer.pass(p), input);
+    },
+    error(inputs, targets) {
+        this.lastError = inputs.reduce((acc, input, t) => {
+            const target = targets[t];
+            return acc + this.pass(input).data.reduce((p, c, i) => p + (c - target[i]) ** 2, 0);
+        }, 0) * 0.5 / inputs.length;
+        return this.lastError;
+    },
+    backPropMulti(inputs, targets, alpha) {
+        inputs.forEach((input, j) => {
+            // TODO: derror
+            let A = this.pass(input).map((y, i) => y - targets[j][i]);
+
+            for (let n = this.layers.length - 1; n >= 0; n--) {
+                A = this.layers[n].getAdjustments(A);
+            }
+        });
+        // this.layers.forEach(layer => layer.clipGradient(10));
+        for (let n = this.layers.length - 1; n >= 0; n--) {
+            this.layers[n].adjust(alpha / inputs.length * Math.log(this.lastError + 1));
+        }
+    }
+});
+
+const mutateLinearNeuralNet = (oldNeuralNet, mutation = 1) => {
+    const newNet = newLinearNeuralNet(oldNeuralNet.layerCounts, mutation);
     newNet.layers.forEach((layer, i) => {
         layer.weights = matadd(layer.weights, oldNeuralNet.layers[i].weights);
         layer.bias = matadd(layer.bias, oldNeuralNet.layers[i].bias);
@@ -7,189 +37,230 @@ const mutateNeuralNet = (oldNeuralNet, mutation = 1) => {
     return newNet;
 }
 
-const newNeuralNet = (layerCounts, randomRange = 1) => ({
-    name: Math.random().toString(36).substring(2),
-    layers: layerCounts.slice(1).map((layerCount, i) => newLinearLayer(layerCounts[i], layerCount, randomRange, ...(i === layerCounts.length - 2 ? [] : [ReLU, dReLU]))),
-    layerCounts,
-    pass(input) {
-        return this.layers.reduce((p, layer) => layer.pass(p), input.map(i => [i])).flat();
-    },
-    error(inputs, targets) {
-        return inputs.reduce((acc, input, t) => {
-            const target = targets[t];
-            return acc + this.pass(input).reduce((p, c, i) => p + (c - target[i]) ** 2, 0);
-        }, 0) * 0.5 / inputs.length;
-    },
-    backPropMulti(inputs, targets, alpha) {
-        inputs.forEach((input, j) => {
-            // TODO: derror
-
-            // THIS IS CROSS ENTROPY DONT USE IT IT BROKEN
-            // let A = this.pass(input).map((y, i) => targets.reduce((p, target, t) => p +
-            //         (t === j ? y - target[i] : ((y + target[i] - 1) * (targets[t][i] - targets[j][i]) ** 2)), 0) *
-            //     this.layers[this.layers.length - 1].dsigma(y));
-            let A = this.pass(input).map((y, i) => y - targets[j][i]);
-
-            for (let n = this.layers.length - 1; n >= 0; n--) {
-                A = this.layers[n].getAdjustments(A);
-            }
-        });
-        this.layers.forEach(layer => layer.clipGradient(10));
-        for (let n = this.layers.length - 1; n >= 0; n--) {
-            this.layers[n].adjust(alpha / inputs.length * Math.log(this.totalError + 1));
-        }
-    }
-});
+// Different types of neural nets
+const newLinearNeuralNet = (layerCounts, randomRange = 1, activation = ReLU, finalActivation = activation) => {
+    return newNeuralNet(layerCounts.slice(1).map((layerCount, i) => newLinearLayer(layerCounts[i], layerCount, randomRange, i === layerCounts.length - 2 ? finalActivation : activation)));
+}
 
 const newQuadraticNeuralNet = (layerCounts, randomRange = 1) => {
-    const neuralNet = newNeuralNet(layerCounts, randomRange);
-    neuralNet.layers = layerCounts.slice(1).map((layerCount, i) => newQuadraticLayer(layerCounts[i], layerCount, randomRange));
-    neuralNet.pass = function (input) {
-        return this.layers.reduce((p, layer) => layer.pass(p), input);
-    }
-    return neuralNet;
+    return newNeuralNet(layerCounts.slice(1).map((layerCount, i) => newQuadraticLayer(layerCounts[i], layerCount, randomRange)));
 };
 
-const newLinearLayer = (inputSize, outputSize, randomRange, sigma = x => x, dsigma = y => 1) => ({
-    weights: Array(outputSize).fill().map(() => Array(inputSize).fill().map(() => initRand(randomRange))),
-    bias: Array(outputSize).fill().map(() => [initRand(randomRange)]),
+const newConvolutionalNeuralNet = (kernelLayerSpecs, randomRange = 1) => {
+    const neuralNet = newNeuralNet([]);
+    for (const [i, { channels, kernelSpecs }] of kernelLayerSpecs.slice(0, kernelLayerSpecs.length - 1).entries()) {
+        this.layers.push(newKernelLayer(channels, kernelLayerSpecs[i + 1], kernelSpecs, ReLU, randomRange))
+    }
+    return neuralNet;
+}
+
+// Different types of layers
+const newLinearLayer = (inputSize, outputSize, randomRange = 1, sigma = linear) => ({
+    b: randomTensor([outputSize, inputSize], randomRange),
+    a: randomTensor([outputSize], randomRange),
     sigma,
-    dsigma,
-    // lastOutput: undefined,
     pass(input) {
-        this.lastInput = [...input];
-        this.lastOutput = matadd(matMult(this.weights, input), this.bias).map(row => [this.sigma(row[0])]);
+        this.lastInput = input;
+        this.lastOutput = elementWise([outputSize], ([i]) =>
+            sumOverIndices([inputSize], ([j]) => this.b.get([i, j]) * input[j]) +
+            this.a.get(i)
+        ).map(this.sigma);
         return this.lastOutput;
     },
     getAdjustments(A) {
-        if (!this.dbias) this.dbias = A.map(() => [0]);
-        if (!this.dweights) this.dweights = A.map(() => this.lastInput.map(() => 0));
+        if (!this.db) this.db = zerosTensor([outputSize, inputSize]);
+        if (!this.da) this.da = zerosTensor([outputSize]);
 
-        const adjust = A.map((a, y) => a * this.dsigma(this.lastOutput[y][0]));
+        const adjust = elementWise([outputSize], ([i]) => A.get(i) * this.sigma(this.lastOutput.get(i), true));
 
-        this.dbias = adjust.map((a, y) => [this.dbias[y][0] + a]);
-        this.dweights = adjust.map((a, y) => this.lastInput.map((i, x) => this.dweights[y][x] + i[0] * a));
-        return matMult([adjust], this.weights)[0];
+        this.db = elementWise([outputSize, inputSize], ([i, j]) => adjust.get(i) * this.lastInput.get(j) + this.db.get([i, j]));
+        this.da = elementWise([outputSize], ([i]) => adjust.get(i) + this.da.get(i));
+
+        return elementWise([inputSize], ([j]) => sumOverIndices([outputSize], ([i]) => adjust.get(i) * this.b.get([i, j]))).data;
     },
     adjust(alpha) {
-        this.bias = this.bias.map(([bias], i) => [bias - alpha * this.dbias[i][0]]);
-        this.weights = this.weights.map((row, i) => row.map((weight, j) => weight - alpha * this.dweights[i][j]));
-        this.dbias = undefined;
-        this.dweights = undefined;
+        this.b = elementWise([outputSize, inputSize], ([i, j]) => this.b.get([i, j]) - alpha * this.db.get([i, j]));
+        this.a = elementWise([outputSize], ([i]) => this.a.get([i]) - alpha * this.da.get([i]));
+        delete this.db;
+        delete this.da;
     },
-    clipGradient(maxGradient) {
-        const gradientLengthSquared = this.dbias.reduce((s, b) => s + b ** 2, 0) + this.dweights.reduce((s, row) => s + row.reduce((s2, w) => s2 + w ** 2, 0), 0);
-        const clipAmount = Math.min(1, maxGradient / Math.sqrt(gradientLengthSquared));
-        if (clipAmount < 1) {
-            this.dbias = this.dbias.map((b) => [b[0] * clipAmount]);
-            this.dweights = this.dweights.map((row) => row.map((w) => w * clipAmount));
-        }
-    }
+    // clipGradient(maxGradient) {
+    //     const gradientLengthSquared = sumOverIndices([outputSize], ([i]) => this.da.get(i) ** 2) + sumOverIndices([outputSize, inputSize], ([i, j]) => this.db.get([i, j]) ** 2);
+    //     const clipAmount = Math.min(1, maxGradient / Math.sqrt(gradientLengthSquared));
+    //     if (clipAmount < 1) {
+    //         this.db = elementWise([outputSize, inputSize], ([i, j]) => this.db.get([i, j]) * clipAmount);
+    //         this.da = elementWise([outputSize], ([i]) => this.da.get(i) * clipAmount);
+    //     }
+    // }
 });
 
-const newQuadraticLayer = (inputSize, outputSize, randomRange) => ({
-    a: randomTensor([outputSize, inputSize, inputSize], randomRange),
+const newQuadraticLayer = (inputSize, outputSize, randomRange = 1) => ({
+    c: randomTensor([outputSize, inputSize, inputSize], randomRange),
     b: randomTensor([outputSize, inputSize], randomRange),
-    c: randomTensor([outputSize], randomRange),
+    a: randomTensor([outputSize], randomRange),
     pass(input) {
         this.lastInput = [...input];
         this.lastOutput = elementWise([outputSize], ([i]) =>
-            sumOverIndices([inputSize, inputSize], ([j, k]) => this.a.get([i, j, k]) * input[j] * input[k]) +
+            sumOverIndices([inputSize, inputSize], ([j, k]) => this.c.get([i, j, k]) * input[j] * input[k]) +
             sumOverIndices([inputSize], ([j]) => this.b.get([i, j]) * input[j]) +
-            this.c.get(i)
+            this.a.get(i)
         ).data;
         return this.lastOutput;
     },
     getAdjustments(A) {
-        if (!this.da) this.da = zerosTensor([outputSize, inputSize, inputSize]);
+        if (!this.dc) this.dc = zerosTensor([outputSize, inputSize, inputSize]);
         if (!this.db) this.db = zerosTensor([outputSize, inputSize]);
-        if (!this.dc) this.dc = zerosTensor([outputSize]);
+        if (!this.da) this.da = zerosTensor([outputSize]);
 
-        this.da = elementWise([outputSize, inputSize, inputSize], ([i, j, k]) => A[i] * this.lastInput[j] * this.lastInput[k] + this.da.get([i, j, k]));
+        this.dc = elementWise([outputSize, inputSize, inputSize], ([i, j, k]) => A[i] * this.lastInput[j] * this.lastInput[k] + this.dc.get([i, j, k]));
         this.db = elementWise([outputSize, inputSize], ([i, j]) => A[i] * this.lastInput[j] + this.db.get([i, j]));
-        this.dc = elementWise([outputSize], ([i]) => A[i] + this.dc.get(i));
-        return elementWise([inputSize], ([j]) => sumOverIndices([outputSize], ([i]) => this.b.get([i, j]) + sumOverIndices([inputSize], ([k]) => (this.a.get([i, j, k]) + this.a.get([i, k, j])) * this.lastInput[k]))).data;
+        this.da = elementWise([outputSize], ([i]) => A[i] + this.da.get(i));
+        return elementWise([inputSize], ([j]) => sumOverIndices([outputSize], ([i]) => A[i] * (this.b.get([i, j]) + sumOverIndices([inputSize], ([k]) => (this.c.get([i, j, k]) + this.c.get([i, k, j])) * this.lastInput[k])))).data;
     },
     adjust(alpha) {
-        this.a = elementWise([outputSize, inputSize, inputSize], ([i, j, k]) => this.a.get([i, j, k]) - alpha * this.da.get([i, j, k]));
+        this.c = elementWise([outputSize, inputSize, inputSize], ([i, j, k]) => this.c.get([i, j, k]) - alpha * this.dc.get([i, j, k]));
         this.b = elementWise([outputSize, inputSize], ([i, j]) => this.b.get([i, j]) - alpha * this.db.get([i, j]));
-        this.c = elementWise([outputSize], ([i]) => this.c.get([i]) - alpha * this.dc.get([i]));
-        delete this.da;
-        delete this.db;
+        this.a = elementWise([outputSize], ([i]) => this.a.get([i]) - alpha * this.da.get([i]));
         delete this.dc;
+        delete this.db;
+        delete this.da;
     },
-    clipGradient() {
-        // dont do anything
-    }
 });
 
-// Incomplete
-
-const newConvolutionalNeuralNet = (kernels, randomRange) => ({
-    name: Math.random().toString(36).substring(2),
-    kernelLayers: kernels.map(([count, width, height, padding, stride]) => Array(count).fill().map(() => newKernel(width, height, randomRange, padding, stride))),
-    kernelCounts: kernels,
-    pass(input) { },
-    error(input, target) {
-        return 0.5 * this.pass(input).reduce((p, c, i) => p + (c - target[i]) ** 2, 0);
-    },
-    backPropMulti(inputs, targets, alpha) {
-        // inputs.forEach((input, j) => {
-        //     const target = targets[j];
-        //     let A = this.pass(input).map((y, i) => (y - target[i]) * y * (1 - y));
-        //     for (let n = this.layers.length - 1; n >= 0; n--) {
-        //         A = this.layers[n].getAdjustments(A, alpha);
-        //     }
-        // });
-        // for (let n = this.layers.length - 1; n >= 0; n--) {
-        //     this.layers[n].adjust(alpha / inputs.length);
-        // }
-    }
-});
-
-const newKernel = (width, height, range, padding = 0, stride = 1) => ({
-    width,
-    height,
-    padding,
-    stride,
-    kernel: Array(height).fill().map(() => Array(width).fill().map(() => initRand(range))),
-    sigma: ((x) => 1 / (1 + Math.exp(-x))),
-    pass(input) {
-        const output = [];
-        for (let y = -this.padding; y + this.width <= input.length + this.padding; y += stride) {
-            output.push([]);
-            for (let x = -this.padding; x + this.width <= input[0].length + this.padding; x += stride) {
-                let value = 0;
-                for (let dy = Math.min(-y, 0); dy < Math.max(input.length - y, this.height); dy++) {
-                    for (let dx = Math.min(-x, 0); dx < Math.max(input[0].length - x, this.width); dx++) {
-                        value += input[y + dx][x + dx] * kernel[dy][dx];
-                    }
-                }
-                output[y + this.padding].push(this.sigma(value));
-            }
+const newKernelLayer = (inputChannels, outputChannels, kernelSpecs, sigma, randomRange = 1) => {
+    const processedKernelSpecs = {
+        ...kernelSpecs,
+        padding: typeof kernelSpecs.padding === 'object' ? kernelSpecs.padding : [kernelSpecs.padding, kernelSpecs.padding],
+        innerPadding: typeof kernelSpecs.innerPadding === 'object' ? kernelSpecs.innerPadding : [kernelSpecs.innerPadding, kernelSpecs.innerPadding],
+        stride: typeof kernelSpecs.stride === 'object' ? kernelSpecs.stride : [kernelSpecs.stride, kernelSpecs.stride],
+        trueInputSize: [0, 1].map(i => 2 * this.padding[i] + this.inputSize[i] + this.innerPadding[i] * (this.inputSize[i] - 1)),
+        outputSize: [0, 1].map(i => 1 + Math.floor((this.trueInputSize[i] - this.kernelSize[i]) / this.stride[i])),
+    };
+    processedKernelSpecs.LField = zerosTensor([...processedKernelSpecs.trueInputSize, 2]);
+    for (let r = 0; r < processedKernelSpecs.inputSize[0]; r++) {
+        for (let s = 0; s < processedKernelSpecs.inputSize[0]; s++) {
+            processedKernelSpecs.LField.set([processedKernelSpecs.padding[0] + x * processedKernelSpecs.innerPadding[0], processedKernelSpecs.padding[1] + y * processedKernelSpecs.innerPadding[1], 0], r);
+            processedKernelSpecs.LField.set([processedKernelSpecs.padding[0] + x * processedKernelSpecs.innerPadding[0], processedKernelSpecs.padding[1] + y * processedKernelSpecs.innerPadding[1], 1], s);
         }
-        return output;
     }
-});
 
-// possible activation functions
+    return {
+        kernels: Array(outputChannels).fill().map(() => Array(inputChannels).fill().map(() => newKernel(processedKernelSpecs, randomRange))),
+        bias: Array(outputChannels).fill().map(() => initRand(randomRange)),
+        sigma,
+        pass(inputTensor) {
+            if (inputTensor.dim === undefined) inputTensor = newTensor([1, 1, inputTensor.length], inputTensor);
+            // needs to return (outputWidth x outputHeight) x outputChannels
+            const outputtedKernelValues = this.kernels.map(outputs => outputs.map(kernel => kernel.pass(inputTensor)));
+            this.lastOutput = elementWise([...processedKernelSpecs.outputSize, outputChannels], ([i, ox, oy]) =>
+                this.sigma(
+                    this.bias[i] +
+                    sumOverIndices([inputChannels], ([j]) => outputtedKernelValues[i][j].get([ox, oy]))
+                )
+            );
+            return this.lastOutput;
+        },
+        getAdjustments(A) {
+            if (!this.dbias) zerosTensor([outputChannels]);
+            const adjust = elementWise([...processedKernelSpecs.outputSize, outputChannels], ([i, ox, oy]) => A.get([i, ox, oy]) * this.sigma(this.lastOutput.get([i, ox, oy]), true));
+            this.dbias = elementWise([outputChannels], ([i]) => sumOverIndices(processedKernelSpecs.outputSize, ([ox, oy]) => this.dbias.get(i) + adjust.get([i, ox, oy])));
+            for (let n = 0; n < outputChannels; n++) {
+                for (let m = 0; m < inputChannels; m++) {
+                    this.kernels[n][m].getAdjustments(adjust, n);
+                }
+            }
 
-const sigmoid = x => 1 / (1 + Math.exp(-x));
-const dsigmoid = y => y * (1 - y);
+            return elementWise([inputChannels, ...processedKernelSpecs.inputSize], ([j, r, s]) => sumOverIndices([outputChannels], ([i, ox, oy]) => adjust.get([i, ox, oy]) * this.kernels[i][j].adjustment.get([ox, oy, r, s])));
+        },
+        adjust(alpha) {
+            for (let n = 0; n < outputChannels; n++) {
+                this.bias[n] -= this.dbias.get(n) * alpha;
+                for (let m = 0; m < inputChannels; m++) {
+                    this.kernels[n][m].adjust(alpha);
+                }
+            }
+            delete this.dbias;
+        }
+    }
+};
 
-const ReLU = x => x > 0 ? x : 0;
-const dReLU = y => y > 0 ? 1 : 0;
+const newPoolingLayer = (inputChannels, outputChannels, poolFunc) => {};
 
-const clip = x => Math.max(0, Math.min(1, x));
-const dclip = y => y === 1 || y === 0 ? 0 : 1;
+const newKernel = (kernelSpecs, randomRange) => {
+    return {
+        ...kernelSpecs,
 
-const lrelu = (alpha) => x => x > 0 ? x : alpha * x;
-const dlrelu = (alpha) => y => y > 0 ? 1 : alpha;
+        kernel: randomTensor(this.kernelSize, randomRange),
+        pass(inputTensor) {
+            // Add inner and outer padding
+            this.lastProcessedInput = zerosTensor(this.trueInputSize);
+            for (let x = 0; x < inputTensor.dim[0]; x++) {
+                for (let y = 0; y < inputTensor.dim[1]; y++) {
+                    this.lastProcessedInput.set([this.padding[0] + x * this.innerPadding[0], this.padding[1] + y * this.innerPadding[1]], inputTensor.get([x, y]));
+                }
+            }
+            return elementWise(this.outputSize, ([ox, oy]) =>
+                sumOverIndices(this.kernelSize, ([x, y]) =>
+                    this.kernel.get([x, y]) * this.lastProcessedInput.get([x + this.stride[0] * ox, y + this.stride[1] * oy])
+                )
+            );
+        },
+        getAdjustments(A, i) {
+            this.dkernel = elementWise(this.outputSize, ([ox, oy]) =>
+                sumOverIndices(this.kernelSize, ([x, y]) =>
+                    A.get([i, ox, oy]) * this.lastProcessedInput.get([x + this.stride[0] * ox, y + this.stride[1] * oy])
+                )
+            );
+            this.adjustment = elementWise([...this.outputSize, ...this.inputSize], ([ox, oy, r, s]) => sumOverIndices(this.kernelSize, ([x, y]) =>
+                this.kernel.get([x, y]) * this.L(ox, oy, x, y, r, s)
+            ));
+        },
+        adjust(alpha) {
+            this.kernel = elementWise(this.kernelSize, ([x, y]) => this.kernel.get([x, y]) - alpha * this.dkernel.get([x, y]));
+            delete this.dkernel;
+        },
+        L(ox, oy, x, y, r, s) {
+            return kernelSpecs.LField.get([x + this.stride[0] * ox, y + this.stride[1] * oy, 0]) === r && LField.get([x + this.stride[0] * ox, y + this.stride[1] * oy, 1]) === s;
+        }
+    }
+};
 
-const tanh = x => {
-    const ep = Math.exp(x);
-    const em = Math.exp(-x);
-    return (ep - em) / (ep + em);
+// possible activation functions, when derivative is set to true, it is expecting the output rather than the input as x.
+// This is just because for many of the functions it is faster to compute the derivative from the output than it is from the input.
+
+const sigmoid = (x, derivative) => {
+    if (!derivative) return 1 / (1 + Math.exp(-x));
+    return x * (1 - x);
+}
+const ReLU = (x, derivative) => {
+    if (!derivative) return x > 0 ? x : 0;
+    return x > 0 ? 1 : 0
+}
+const clip = (x, derivative) => {
+    if (!derivative) return Math.max(0, Math.min(1, x));
+    return x === 1 || x === 0 ? 0 : 1;
+}
+const lrelu = (alpha) => (x, derivative) => {
+    if (!derivative) return x > 0 ? x : alpha * x;
+    if (alpha < 0) throw "Leaky Relu cannot determine the derivative from the output when alpha is less than 0!";
+    return x > 0 ? 1 : alpha;
+}
+const tanh = (x, derivative) => {
+    if (!derivative) {
+        if (x >= 19) return 1;
+        if (x <= -19) return -1;
+        const ep = Math.exp(2 * x);
+        return (ep - 1) / (ep + 1);
+    }
+    return 1 - x ** 2;
+}
+const linear = (x, derivative = false) => {
+    if (!derivative) return x;
+    return 1;
 }
 
-const dtanh = y => 1 - y ** 2;
+// This is just for convenience, if someone wants to create their own activation function all they need to do is provide a forward function and an activation
+const createActivationFunc = (reg, deriv) => (x, derivative = false) => {
+    if (!derivative) return reg(x);
+    return deriv(x);
+}
