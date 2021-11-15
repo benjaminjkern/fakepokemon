@@ -6,6 +6,7 @@ const keysDown = {};
 const mutate = false;
 const backprop = true;
 
+let lowesterror = Number.MAX_VALUE;
 let best;
 let autoencoder;
 let fakeOutput;
@@ -153,7 +154,7 @@ const initframe = (ctx) => {
         }
         if (loaded) {
             pokemon[pokemon.length] = newTensor([96, 96, 1], inputImage);
-            pokemon[pokemon.length - 1].name = pokemon.length;
+            pokemon[pokemon.length - 1].name = Math.random();
             loaded = false;
             if (pokemon.length >= numPokemon * 2)
                 loading = false;
@@ -179,9 +180,14 @@ const makeframe = (ctx) => {
 
     autoencoder.error(pokemon, pokemon);
     const status = document.getElementById('status');
-    status.innerHTML = autoencoder.lastError + '<br>' + status.innerHTML;
+    if (autoencoder.lastError < lowesterror) {
+        lowesterror = autoencoder.lastError
+        status.innerHTML = '<span style="color:red">' + autoencoder.lastError + '</span><br>' + status.innerHTML;
+    } else {
+        status.innerHTML = autoencoder.lastError + '<br>' + status.innerHTML;
+    }
 
-    autoencoder.backPropMulti(pokemon, pokemon, 0.1);
+    autoencoder.backPropMulti(pokemon, pokemon, 0.01);
     // console.log(autoencoder);
 
     fakeImages = pokemon.map(pok => autoencoder.pass(pok));
