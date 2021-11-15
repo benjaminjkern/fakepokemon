@@ -23,7 +23,7 @@ const image = new Image(96, 96);
 let testPokemon = [];
 let pokemon = [];
 
-window.onload = function() {
+window.onload = function () {
     canvas = document.getElementById('canvas');
     let ctx = canvas.getContext('2d');
 
@@ -31,11 +31,11 @@ window.onload = function() {
     //     start(ctx);
     // }
 
-    window.onkeydown = function(e) {
+    window.onkeydown = function (e) {
         keysDown[e.code] = true;
     }
 
-    window.onkeyup = function(e) {
+    window.onkeyup = function (e) {
         delete keysDown[e.code];
     }
 
@@ -178,7 +178,8 @@ const makeframe = (ctx) => {
     controlVars.killed = false;
 
     autoencoder.error(pokemon, pokemon);
-    console.log(autoencoder.lastError);
+    const status = document.getElementById('status');
+    status.innerHTML = autoencoder.lastError + '<br>' + status.innerHTML;
 
     autoencoder.backPropMulti(pokemon, pokemon, 0.1);
     // console.log(autoencoder);
@@ -189,7 +190,7 @@ const makeframe = (ctx) => {
 
     realFakeImage = autoencoder.pass(realImage);
 
-    const decoder = {...autoencoder };
+    const decoder = { ...autoencoder };
     const mid = Math.floor(decoder.layers.length / 2);
     decoder.layers = decoder.layers.slice(mid);
     const randomInput = randomTensor([1, 1, decoder.layers[0].inputChannels])
