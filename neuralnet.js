@@ -1,45 +1,60 @@
 const newNeuralNet = (layers) => ({
     name: Math.random().toString(36).substring(2),
     layers,
-    cache: {},
-    pass(input) {
-        if (input.name && this.cache[input.name]) return this.cache[input.name];
-        if (!input.dim) return this.pass(newTensor([input.length], input));
-        const result = this.layers.reduce((p, layer) => layer.pass(p), input);
-        if (input.name) this.cache[input.name] = result;
-        return result;
+    batchNormalize: true,
+    maxGradient: 1,
+    pass(batch) {
+        return this.layers.reduce((currentValues, layer, i) => {
+            const results = layer.pass(currentValues);
+            if (!this.batchNormalize || results.length === 1 || i === this.layers.length - 1) return results;
+
+            layer.mean = zerosTensor(results[0].dim);
+            layer.squareMean = zerosTensor(results[0].dim);
+            layer.stdev = zerosTensor(results[0].dim);
+            elementWise(results[0].dim, (index) => {
+                for (const result of results) {
+                    layer.mean.set(index, layer.mean.get(index) + result.get(index) / result.length);
+                    layer.squareMean.set(index, layer.mean.get(index) + (result.get(index) ** 2) / result.length);
+                }
+                layer.stdev.set(index, Math.sqrt(layer.squareMean.get(index) - layer.mean.get(index) ** 2) || 1);
+
+                for (const result of results) {
+                    result.set(index, (result.get(index) - layer.mean.get(index)) / layer.stdev.get(index));
+                }
+            });
+            return results;
+        }, batch);
     },
-    error(inputs, targets) {
-        this.lastError = inputs.reduce((acc, input, t) => {
-            const target = targets[t];
-            return acc + this.pass(input).data.reduce((p, c, i) => p + (c - target.data[i]) ** 2, 0);
-        }, 0) * 0.5 / inputs.length;
+    error(batch, targets) {
+        const results = this.pass(batch);
+        this.lastError = sumOverIndices([results.length], ([b]) =>
+            sumOverIndices(results[t].dim, index => (results[b].get(index) - targets[b].get(index)) ** 2)
+        ) * 0.5 / batch.length;
         return this.lastError;
     },
-    backPropMulti(inputs, targets, alpha) {
-        inputs.forEach((input, j) => {
-            // TODO: derror
-            const result = this.pass(input);
-            let A = elementWise(input.dim, (i) => result.get(i) - targets[j].get(i));
+    backProp(batch, targets, alpha) {
+        const results = this.pass(batch);
+        let A = Array(results.length).fill().map((_, b) =>
+            elementWise(results[b].dim, (i) => results[b].get(i) - targets[b].get(i))
+        );
+        for (let n = this.layers.length - 1; n >= 0; n--) {
+            A = this.layers[n].getAdjustments(A);
+        }
 
-            for (let n = this.layers.length - 1; n >= 0; n--) {
-                console.log(A);
-                A = this.layers[n].getAdjustments(A);
-            }
-        });
-        // this.layers.forEach(layer => layer.clipGradient(10));
-        const maxGradient = 1;
+        const effectiveAlpha = alpha * Math.log(this.lastError + 1);
+
         const gradientLength = Math.sqrt(this.layers.reduce((p, layer) => p + layer.gradientLengthSquared(), 0));
 
-        this.cache = {};
         if (gradientLength === 0) {
-            this.layers.forEach(layer => layer.nudge(alpha / inputs.length * Math.log(this.lastError + 1)));
+            this.layers.forEach(layer => layer.nudge(effectiveAlpha));
             console.log("Network has reached local minimum! Nudging!");
             return;
         }
-        const clipAmount = Math.min(1, maxGradient / gradientLength);
+
+        const clipAmount = Math.min(1, this.maxGradient / gradientLength);
+
         for (let n = this.layers.length - 1; n >= 0; n--) {
-            this.layers[n].adjust(clipAmount * alpha / inputs.length * Math.log(this.lastError + 1));
+            this.layers[n].adjust(clipAmount * effectiveAlpha);
         }
     }
 });
@@ -172,7 +187,6 @@ const newKernelLayer = (inputChannels, outputChannels, kernelSpecs, sigma, rando
         bias: Array(outputChannels).fill().map(() => initRand(randomRange)),
         sigma,
         pass(inputTensor) {
-            if (inputTensor.dim === undefined) inputTensor = newTensor([1, 1, inputTensor.length], inputTensor);
             const processedInputs = Array(inputChannels).fill().map((_, channel) => {
                 return elementWise(inputTensor.dim.slice(0, 2), ([i, j]) => inputTensor.get([i, j, channel]));
             });
@@ -199,7 +213,14 @@ const newKernelLayer = (inputChannels, outputChannels, kernelSpecs, sigma, rando
                 }
             }
 
-            return elementWise([...processedKernelSpecs.inputSize, inputChannels], ([r, s, j]) => sumOverIndices([...processedKernelSpecs.outputSize, outputChannels], ([ox, oy, i]) => adjust.get([ox, oy, i]) * this.kernels[i][j].adjustment.get([ox, oy, r, s])));
+            const newA = zerosTensor([...processedKernelSpecs.inputSize, inputChannels]);
+            elementWise([inputChannels], ([j]) => this.kernels[0][0].inputOutputLoop(([ox, oy, r, s], kernelIndex) => {
+                newA.set([r, s, j],
+                    newA.get([r, s, j]) +
+                    sumOverIndices([outputChannels], ([i]) => adjust.get([ox, oy, i]) * this.kernels[i][j].adjustment.get([ox, oy, r, s]))
+                )
+            }));
+            return newA;
         },
         adjust(alpha) {
             for (let n = 0; n < outputChannels; n++) {
@@ -321,6 +342,12 @@ const linear = (x, derivative = false) => {
     if (!derivative) return x;
     return 1;
 }
+
+// Todo: Make work
+// const dropout = (func, rate) =>  (x, derivative) => {
+//     if (Math.random() < rate) return 0;
+//     return func(x, derivative)
+// }
 
 // This is just for convenience, if someone wants to create their own activation function all they need to do is provide a forward function and an activation
 const createActivationFunc = (reg, deriv) => (x, derivative = false) => {

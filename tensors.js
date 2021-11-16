@@ -27,7 +27,9 @@ const zerosTensor = (dim) => {
             if (this.data[i] === undefined) {
                 if (this.isRandom) {
                     this.data[i] = this.isRandom * (Math.random() * 2 - 1);
-                } else this.data[i] = 0;
+                } else {
+                    return 0;
+                }
             }
             return this.data[i];
         },
@@ -94,7 +96,8 @@ const elementWise = (dim, func) => {
     const size = dimSize(dim);
     let index = recreateIdx(0, dim);
     for (let i = 0; i < size; i++) {
-        tensor.set_byDataIdx(i, func(index));
+        const result = func(index);
+        if (result) tensor.set_byDataIdx(i, result);
         index = addToIdx(index, dim);
     }
     return tensor;
