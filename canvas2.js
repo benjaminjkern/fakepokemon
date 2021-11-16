@@ -44,14 +44,24 @@ window.onload = function () {
 };
 
 const restart = (ctx) => {
-    autoencoder = newLinearNeuralNet([96 * 96, 1000, 100, 10, 100, 1000, 96 * 96], 1);
+    // autoencoder = newLinearNeuralNet([96 * 96, 1000, 100, 10, 100, 1000, 96 * 96], 1);
 
-    // autoencoder = newConvolutionalNeuralNet(1, [96, 96], [
-    //     { channels: 3, kernelSpecs: { kernelSize: [20, 20], padding: 0, stride: 5 } },
-    //     { channels: 5, kernelSpecs: { kernelSize: [16, 16], padding: 0, stride: 2 }, },
-    //     { channels: 3, kernelSpecs: { kernelSize: [16, 16], padding: 15, innerPadding: 2 } },
-    //     { channels: 1, kernelSpecs: { kernelSize: [20, 20], padding: 12, innerPadding: 5 } },
-    // ]);
+    autoencoder = newConvolutionalNeuralNet(1, [96, 96], [
+        { channels: 3, kernelSpecs: { kernelSize: [9, 9], padding: 4, stride: 2 } },
+        { channels: 3, kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 } },
+        { channels: 5, kernelSpecs: { kernelSize: [5, 5], padding: 2, stride: 1 }, },
+        { channels: 5, kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 } },
+        { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 1, stride: 1 } },
+        { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 } },
+        { channels: 10, kernelSpecs: { kernelSize: [5, 5], padding: 0, stride: 1 } },
+        { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 2, innerPadding: 1 } },
+        { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 1, innerPadding: 1 } },
+        { channels: 5, kernelSpecs: { kernelSize: [3, 3], padding: 1, innerPadding: 1 } },
+        { channels: 5, kernelSpecs: { kernelSize: [5, 5], padding: 4, innerPadding: 1 } },
+        { channels: 3, kernelSpecs: { kernelSize: [3, 3], padding: 2, innerPadding: 1 } },
+        { channels: 3, kernelSpecs: { kernelSize: [9, 9], padding: 7, innerPadding: 1 } },
+        { channels: 1, kernelSpecs: { kernelSize: [10, 10], padding: 7, innerPadding: 0 } },
+    ]);
 
     // autoencoder.layers[3].bias[0] = 0;
 
@@ -154,7 +164,8 @@ const initframe = (ctx) => {
             }
         }
         if (loaded) {
-            pokemon[pokemon.length] = newTensor([96 * 96], inputImage);//newTensor([96, 96, 1], inputImage);
+            // pokemon[pokemon.length] = newTensor([96 * 96], inputImage);//newTensor([96, 96, 1], inputImage);
+            pokemon[pokemon.length] = newTensor([96, 96, 1], inputImage);
             pokemon[pokemon.length - 1].name = Math.random();
             loaded = false;
             if (pokemon.length >= numPokemon * 2)
@@ -200,7 +211,7 @@ const makeframe = (ctx) => {
     const decoder = { ...autoencoder };
     const mid = Math.floor(decoder.layers.length / 2);
     decoder.layers = decoder.layers.slice(mid);
-    const randomInput = randomTensor([10])
+    const randomInput = randomTensor([1, 1, 10]);
     fakeImage = decoder.pass(randomInput);
 
     // const randomInput = randomTensor([...autoencoder.layers[0].kernelSpecs.inputSize, autoencoder.layers[0].inputChannels]);
