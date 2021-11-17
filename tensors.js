@@ -24,14 +24,17 @@ const zerosTensor = (dim) => {
         get(index) {
             if (typeof index !== 'object') return this.get([index]);
             const i = createIdx(index, this.dim);
-            if (this.data[i] === undefined) {
+            return this.get_byDataIdx(i);
+        },
+        get_byDataIdx(dataIdx) {
+            if (this.data[dataIdx] === undefined) {
                 if (this.isRandom) {
-                    this.data[i] = this.isRandom * (Math.random() * 2 - 1);
+                    this.data[dataIdx] = this.isRandom * (Math.random() * 2 - 1);
                 } else {
                     return 0;
                 }
             }
-            return this.data[i];
+            return this.data[dataIdx];
         },
         get_default(index, default_value) {
             if (typeof index !== 'object') return this.get([index]);
@@ -41,6 +44,10 @@ const zerosTensor = (dim) => {
                 return default_value;
             }
             return this.get(index);
+        },
+        add_to(index, value) {
+            const dataIdx = createIdx(index);
+            this.set_byDataIdx(dataIdx, this.get_byDataIdx(dataIdx) + value);
         },
         set(index, value) {
             if (typeof index !== 'object') return this.set([index], value);
