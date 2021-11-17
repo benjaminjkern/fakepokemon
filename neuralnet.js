@@ -55,7 +55,8 @@ class LinearNeuralNet extends NeuralNet {
     constructor(layerCounts, randomRange = 1, activation = ReLU, finalActivation = activation) {
         super(layerCounts.slice(1).reduce((p, layerCount, i) => [...p,
         new LinearLayer(layerCounts[i], layerCount, randomRange),
-        new ActivationLayer(i < layerCounts.length - 1 ? activation : finalActivation)
+        new BatchNormalizationLayer(layerCount),
+        new ActivationLayer(layerCount, i < layerCounts.length - 1 ? activation : finalActivation)
         ], []));
     }
 }
@@ -64,8 +65,10 @@ class QuadraticNeuralNet extends NeuralNet {
     constructor(layerCounts, randomRange = 1) {
         // You dont really need activations for quadratic neural nets, although you can definitely still have them.
         // These out-of-the-box neural nets dont have them by default though.
-        super(layerCounts.slice(1).reduce((layerCount, i) =>
-            new QuadraticLayer(layerCounts[i], layerCount, randomRange)));
+        super(layerCounts.slice(1).reduce((p, layerCount, i) => [...p,
+        new QuadraticLayer(layerCounts[i], layerCount, randomRange),
+        new BatchNormalizationLayer(layerCount)
+        ], []));
     }
 }
 
@@ -73,11 +76,12 @@ class ConvolutionalNeuralNet extends NeuralNet {
     constructor(inputChannels, inputSize, kernelLayerSpecs, activation = ReLU, finalActivation = activation, randomRange = 1) {
         super([]);
         for (const [i, { channels, kernelSpecs }] of kernelLayerSpecs.entries()) {
-            let size = i === 0 ? [...inputSize, inputChannels] : this.layers[this.layers.length - 2].outputSize;
+            let size = i === 0 ? [...inputSize, inputChannels] : this.layers[this.layers.length - 3].outputSize;
             const layer = new KernelLayer(...size, channels, kernelSpecs);
             console.log(layer.outputSize, dimSize(layer.outputSize));
             this.layers.push(layer);
-            this.layers.push(new ActivationLayer(i < kernelLayerSpecs.length - 1 ? activation : finalActivation));
+            this.layers.push(new BatchNormalizationLayer(layer.outputSize));
+            this.layers.push(new ActivationLayer(layer.outputSize, i < kernelLayerSpecs.length - 1 ? activation : finalActivation));
         }
     }
 }
@@ -141,8 +145,8 @@ class Layer {
 }
 
 class ActivationLayer extends Layer {
-    constructor(inputSize, outputSize, activationFunc) {
-        super(inputSize, outputSize);
+    constructor(inputSize, activationFunc) {
+        super(inputSize, inputSize);
         this.activationFunc = activationFunc;
     }
     passOne(input) {
@@ -166,6 +170,9 @@ class ActivationLayer extends Layer {
 }
 
 class BatchNormalizationLayer extends Layer {
+    constructor(inputSize) {
+        super(inputSize, inputSize);
+    }
     // this one needs to overwrite the pass within layer because it needs access to the batch itself
     pass(batch) {
         if (batch.length === 1) return batch;
