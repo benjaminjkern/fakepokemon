@@ -24,7 +24,7 @@ const image = new Image(96, 96);
 let testPokemon = [];
 let pokemon = [];
 
-window.onload = function () {
+window.onload = function() {
     canvas = document.getElementById('canvas');
     let ctx = canvas.getContext('2d');
 
@@ -32,11 +32,11 @@ window.onload = function () {
     //     start(ctx);
     // }
 
-    window.onkeydown = function (e) {
+    window.onkeydown = function(e) {
         keysDown[e.code] = true;
     }
 
-    window.onkeyup = function (e) {
+    window.onkeyup = function(e) {
         delete keysDown[e.code];
     }
 
@@ -44,24 +44,24 @@ window.onload = function () {
 };
 
 const restart = (ctx) => {
-    // autoencoder = newLinearNeuralNet([96 * 96, 1000, 100, 10, 100, 1000, 96 * 96], 1);
+    autoencoder = new LinearNeuralNet([96 * 96, 1000, 10, 1000, 96 * 96], 1);
 
-    autoencoder = newConvolutionalNeuralNet(1, [96, 96], [
-        { channels: 3, kernelSpecs: { kernelSize: [9, 9], padding: 4, stride: 2 } },
-        { channels: 3, kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 } },
-        { channels: 5, kernelSpecs: { kernelSize: [5, 5], padding: 2, stride: 1 }, },
-        { channels: 5, kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 } },
-        { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 1, stride: 1 } },
-        { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 } },
-        { channels: 10, kernelSpecs: { kernelSize: [5, 5], padding: 0, stride: 1 } },
-        { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 2, innerPadding: 1 } },
-        { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 1, innerPadding: 1 } },
-        { channels: 5, kernelSpecs: { kernelSize: [3, 3], padding: 1, innerPadding: 1 } },
-        { channels: 5, kernelSpecs: { kernelSize: [5, 5], padding: 4, innerPadding: 1 } },
-        { channels: 3, kernelSpecs: { kernelSize: [3, 3], padding: 2, innerPadding: 1 } },
-        { channels: 3, kernelSpecs: { kernelSize: [9, 9], padding: 7, innerPadding: 1 } },
-        { channels: 1, kernelSpecs: { kernelSize: [10, 10], padding: 7, innerPadding: 0 } },
-    ]);
+    // autoencoder = newConvolutionalNeuralNet(1, [96, 96], [
+    //     { channels: 3, kernelSpecs: { kernelSize: [9, 9], padding: 4, stride: 2 } },
+    //     { channels: 3, kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 } },
+    //     { channels: 5, kernelSpecs: { kernelSize: [5, 5], padding: 2, stride: 1 }, },
+    //     { channels: 5, kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 } },
+    //     { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 1, stride: 1 } },
+    //     { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 } },
+    //     { channels: 10, kernelSpecs: { kernelSize: [5, 5], padding: 0, stride: 1 } },
+    //     { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 2, innerPadding: 1 } },
+    //     { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 1, innerPadding: 1 } },
+    //     { channels: 5, kernelSpecs: { kernelSize: [3, 3], padding: 1, innerPadding: 1 } },
+    //     { channels: 5, kernelSpecs: { kernelSize: [5, 5], padding: 4, innerPadding: 1 } },
+    //     { channels: 3, kernelSpecs: { kernelSize: [3, 3], padding: 2, innerPadding: 1 } },
+    //     { channels: 3, kernelSpecs: { kernelSize: [9, 9], padding: 7, innerPadding: 1 } },
+    //     { channels: 1, kernelSpecs: { kernelSize: [10, 10], padding: 7, innerPadding: 0 } },
+    // ]);
 
     // autoencoder.layers[3].bias[0] = 0;
 
@@ -90,7 +90,7 @@ const restart = (ctx) => {
     start(ctx);
 }
 
-const numPokemon = 1;
+const numPokemon = 2;
 
 
 const start = (ctx) => {
@@ -122,9 +122,9 @@ const drawLoop = (ctx) => {
         ctx.putImageData(imageData, 96 * p, 0);
     }
 
-    imageData = ctx.getImageData(0, 96, 96, 96);
-    fakeImage.data.forEach(mapToBlackAndWhite(imageData));
-    ctx.putImageData(imageData, 0, 96);
+    // imageData = ctx.getImageData(0, 96, 96, 96);
+    // fakeImage.data.forEach(mapToBlackAndWhite(imageData));
+    // ctx.putImageData(imageData, 0, 96);
 
     imageData = ctx.getImageData(96, 96, 96, 96);
     realImage.data.forEach(mapToBlackAndWhite(imageData));
@@ -164,8 +164,8 @@ const initframe = (ctx) => {
             }
         }
         if (loaded) {
-            // pokemon[pokemon.length] = newTensor([96 * 96], inputImage);//newTensor([96, 96, 1], inputImage);
-            pokemon[pokemon.length] = newTensor([96, 96, 1], inputImage);
+            pokemon[pokemon.length] = newTensor([96 * 96], inputImage);
+            // pokemon[pokemon.length] = newTensor([96, 96, 1], inputImage);
             pokemon[pokemon.length - 1].name = Math.random();
             loaded = false;
             if (pokemon.length >= numPokemon * 2)
@@ -191,6 +191,7 @@ const makeframe = (ctx) => {
     controlVars.killed = false;
 
     autoencoder.error(pokemon, pokemon);
+
     const status = document.getElementById('status');
     if (autoencoder.lastError < lowesterror) {
         lowesterror = autoencoder.lastError
@@ -199,20 +200,20 @@ const makeframe = (ctx) => {
         status.innerHTML = autoencoder.lastError + '<br>' + status.innerHTML;
     }
 
-    autoencoder.backPropMulti(pokemon, pokemon, 0.1);
+    autoencoder.backProp(pokemon, pokemon, 0.1);
     // console.log(autoencoder);
 
-    fakeImages = pokemon.map(pok => autoencoder.pass(pok));
+    fakeImages = autoencoder.pass(pokemon);
 
     realImage = testPokemon[Math.floor(Math.random() * testPokemon.length)];
 
-    realFakeImage = autoencoder.pass(realImage);
+    realFakeImage = autoencoder.pass([realImage])[0];
 
-    const decoder = { ...autoencoder };
-    const mid = Math.floor(decoder.layers.length / 2);
-    decoder.layers = decoder.layers.slice(mid);
-    const randomInput = randomTensor([1, 1, 10]);
-    fakeImage = decoder.pass(randomInput);
+    // const decoder = {...autoencoder };
+    // const mid = Math.floor(decoder.layers.length / 2);
+    // decoder.layers = decoder.layers.slice(mid);
+    // const randomInput = randomTensor(decoder.layers[0].inputSize);
+    // fakeImage = decoder.pass([randomInput]);
 
     // const randomInput = randomTensor([...autoencoder.layers[0].kernelSpecs.inputSize, autoencoder.layers[0].inputChannels]);
     // console.log(randomInput);
