@@ -2,8 +2,16 @@ const newTensor = (dim, data) => {
     const size = dimSize(dim);
     if (size !== data.length) throw `${dim} (size: ${size}) does not match data size: ${data.length}!`;
     for (const d of data) {
-        if (typeof d !== 'number') throw `All members in a tensor must be numbers! (Received: ${d})`;
+        if (typeof d !== 'number') {
+            throw `All members in a tensor must be numbers! (Received: ${d})`;
+        }
     }
+    const tensor = zerosTensor(dim);
+    tensor.data = data;
+    return tensor;
+};
+
+const newSparseTensor = (dim, data) => {
     const tensor = zerosTensor(dim);
     tensor.data = data;
     return tensor;
@@ -46,7 +54,7 @@ const zerosTensor = (dim) => {
             return this.get(index);
         },
         add_to(index, value) {
-            const dataIdx = createIdx(index);
+            const dataIdx = createIdx(index, this.dim);
             this.set_byDataIdx(dataIdx, this.get_byDataIdx(dataIdx) + value);
         },
         set(index, value) {
@@ -58,7 +66,7 @@ const zerosTensor = (dim) => {
             this.data[dataIdx] = value;
         },
         map(mapFunc) {
-            return newTensor(this.dim, data.map(mapFunc));
+            return newSparseTensor(this.dim, data.map(mapFunc));
         }
     };
 }
