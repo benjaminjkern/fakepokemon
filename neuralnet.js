@@ -4,11 +4,14 @@ class NeuralNet {
         this.name = name;
 
         this.nudgeOnFlat = options.nudgeOnFlat || true;
-        this.maxGradient = options.maxGradient || 1;
+        this.maxGradient = options.maxGradient || 100;
     }
     pass(batch) {
+        // console.log("PASS");
         return this.layers.reduce((currentValues, layer) => {
-            return layer.pass(currentValues);
+            const value = layer.pass(currentValues);
+            // console.log(value);
+            return value;
         }, batch);
     }
     error(batch, targets) {
@@ -19,15 +22,18 @@ class NeuralNet {
         return this.lastError;
     }
     backProp(batch, targets, alpha) {
+        // console.log("BACKPROP");
         const results = this.pass(batch);
-        let batchDelta = Array(results.length).fill().map((_, b) =>
-            elementWise(results[b].dim, (i) => results[b].get(i) - targets[b].get(i))
+        let batchDelta = results.map((result, b) =>
+            elementWise(result.dim, (i) => result.get(i) - targets[b].get(i))
         );
         for (let n = this.layers.length - 1; n >= 0; n--) {
+            // console.log(this.layers[n].constructor.name, batchDelta);
             batchDelta = this.layers[n].setDerivatives(batchDelta);
         }
 
-        const effectiveAlpha = alpha * Math.log(this.lastError + 1) / batch.length;
+        // const effectiveAlpha = alpha * Math.log(this.lastError + 1) / batch.length;
+        const effectiveAlpha = alpha / batch.length;
 
         const gradientLength = Math.sqrt(this.layers.reduce((p, layer) => p + layer.gradientLengthSquared(), 0));
 
@@ -39,10 +45,12 @@ class NeuralNet {
             return;
         }
 
+        if (Number.isNaN(gradientLength)) throw 'UGH';
+
         const clipAmount = Math.min(1, this.maxGradient / gradientLength);
 
         for (let n = this.layers.length - 1; n >= 0; n--) {
-            this.layers[n].adjust(clipAmount * effectiveAlpha);
+            this.layers[n].adjust(effectiveAlpha * clipAmount);
         }
     }
 }
@@ -53,11 +61,19 @@ class NeuralNet {
 //-------------------------------------------------------------------------------------------------------------------
 class LinearNeuralNet extends NeuralNet {
     constructor(layerCounts, randomRange = 1, activation = ReLU, finalActivation = activation) {
-        super(layerCounts.slice(1).reduce((p, layerCount, i) => [...p,
-            new LinearLayer(layerCounts[i], layerCount, randomRange),
-            new BatchNormalizationLayer(layerCount),
-            new ActivationLayer(layerCount, i < layerCounts.length - 1 ? activation : finalActivation)
-        ], []));
+        super([]);
+        for (const [i, layerCount] of layerCounts.slice(1).entries()) {
+            this.layers.push(new LinearLayer(layerCounts[i], layerCount, randomRange));
+            if (i < layerCounts.length - 2) {
+                this.layers.push(new BatchNormalizationLayer(layerCount));
+                this.layers.push(new ActivationLayer(layerCount, activation));
+            }
+        }
+    }
+    copy() {
+        const newNet = new NeuralNet([]);
+        newNet.layers = [...this.layers];
+        return newNet;
     }
 }
 
@@ -66,8 +82,8 @@ class QuadraticNeuralNet extends NeuralNet {
         // You dont really need activations for quadratic neural nets, although you can definitely still have them.
         // These out-of-the-box neural nets dont have them by default though.
         super(layerCounts.slice(1).reduce((p, layerCount, i) => [...p,
-            new QuadraticLayer(layerCounts[i], layerCount, randomRange),
-            new BatchNormalizationLayer(layerCount)
+        new QuadraticLayer(layerCounts[i], layerCount, randomRange),
+        new BatchNormalizationLayer(layerCount)
         ], []));
     }
 }
@@ -106,11 +122,11 @@ class Layer {
 
     // Pass a batch of inputs through the layer
     pass(batch) {
-            this.lastInput = batch;
-            this.lastOutput = batch.map(input => this.passOne(input));
-            return this.lastOutput;
-        }
-        // Given the deltas of the layer above it, calculate the derivatives of all fields
+        this.lastInput = batch;
+        this.lastOutput = batch.map(input => this.passOne(input));
+        return this.lastOutput;
+    }
+    // Given the deltas of the layer above it, calculate the derivatives of all fields
     setDerivatives(batchDelta) {
         this.initDerivatives();
         return batchDelta.map((delta, batchIdx) => this.setOneDerivative(delta, batchIdx));
@@ -120,25 +136,25 @@ class Layer {
 
     // Pass one input through the layer
     passOne(input) {
-            throw "Abstract Method!";
-        }
-        // Initialize derivatives for backpropagation
+        throw "Abstract Method!";
+    }
+    // Initialize derivatives for backpropagation
     initDerivatives(delta) {
-            throw "Abstract Method!";
-        }
-        // Given the delta of the layer above it, calculate the derivative contribution of one input
+        throw "Abstract Method!";
+    }
+    // Given the delta of the layer above it, calculate the derivative contribution of one input
     setOneDerivative(delta, batchIdx) {
-            throw "Abstract Method!";
-        }
-        // Adjust all fields according to their calculated derivatives
+        throw "Abstract Method!";
+    }
+    // Adjust all fields according to their calculated derivatives
     adjust(alpha) {
-            throw "Abstract Method!";
-        }
-        // Calculate the length of the gradient of this layer, for use in gradient clipping (Or analysis)
+        throw "Abstract Method!";
+    }
+    // Calculate the length of the gradient of this layer, for use in gradient clipping (Or analysis)
     gradientLengthSquared() {
-            throw "Abstract Method!";
-        }
-        // Randomly adjust all fields
+        throw "Abstract Method!";
+    }
+    // Randomly adjust all fields
     nudge(alpha) {
         throw "Abstract Method!";
     }
@@ -150,20 +166,21 @@ class ActivationLayer extends Layer {
         this.activationFunc = activationFunc;
     }
     passOne(input) {
-        return input.map(this.activationFunc);
+        return input.map(value => this.activationFunc(value, false));
     }
     initDerivatives() {
         // There are no fields to adjust in an activation layer
     }
     setOneDerivative(delta, batchIdx) {
         const self = this;
-        return delta.map((d, index) => d * self.activationFunc(self.lastOutput[batchIdx].get_byDataIdx(index), true));
+        return delta.map((d, index) => delta.get_byDataIdx(index) * self.activationFunc(self.lastOutput[batchIdx].get_byDataIdx(index), true));
     }
     adjust(alpha) {
         // There are no fields to adjust in an activation layer
     }
     gradientLengthSquared() {
         // There is no gradient in an activation layer
+        return 0;
     }
     nudge(alpha) {
         // There are no fields to nudge in an activation layer
@@ -172,9 +189,9 @@ class ActivationLayer extends Layer {
 
 class BatchNormalizationLayer extends Layer {
     constructor(inputSize) {
-            super(inputSize, inputSize);
-        }
-        // this one needs to overwrite the pass within layer because it needs access to the batch itself
+        super(inputSize, inputSize);
+    }
+    // this one needs to overwrite the pass within layer because it needs access to the batch itself
     pass(batch) {
         if (batch.length === 1) return batch;
 
@@ -189,10 +206,12 @@ class BatchNormalizationLayer extends Layer {
             }
             this.stdev.set(index, Math.sqrt(this.squareMean.get(index) - this.mean.get(index) ** 2) || 1);
 
-            for (const result of resultBatch) {
-                result.set(index, (result.get(index) - this.mean.get(index)) / this.stdev.get(index));
+            for (const [i, result] of resultBatch.entries()) {
+                result.set(index, (batch[i].get(index) - this.mean.get(index)) / (this.stdev.get(index) || 1));
             }
         });
+        // console.log('mean', this.mean);
+        // console.log('stdev', this.stdev);
         return resultBatch;
     }
 
@@ -205,13 +224,14 @@ class BatchNormalizationLayer extends Layer {
     setOneDerivative(delta, batchIdx) {
         if (!this.stdev) return delta;
         const self = this;
-        return delta.map((d, index) => d / self.stdev.get_byDataIdx(index));
+        return delta.map((d, index) => delta.get_byDataIdx(index) / (self.stdev.get_byDataIdx(index) || 1));
     }
     adjust(alpha) {
         // There are no fields to adjust in a batch normalization layer
     }
     gradientLengthSquared() {
         // There is no gradient in a batch normalization layer
+        return 0;
     }
     nudge(alpha) {
         // There are no fields to nudge in a batch normalization layer
@@ -221,7 +241,7 @@ class BatchNormalizationLayer extends Layer {
 class PolyLayer extends Layer {
     constructor(inputSize, outputSize, maxPower, randomRange = 1) {
         super(inputSize, outputSize);
-        this.sizes = Array(maxPower + 1).fill().map((_, p) => [...this.outputSize, ...Array(p).fill(...this.inputSize)]);
+        this.sizes = Array(maxPower + 1).fill().map((_, p) => [outputSize, ...Array(p).fill(inputSize)]);
         this.fields = Array(maxPower + 1).fill().map((_, p) => randomTensor(this.sizes[p], randomRange));
     }
     passOne(input) {
@@ -272,7 +292,7 @@ class LinearLayer extends PolyLayer {
             this.dfields[0].add_to([i], delta.get(i));
         });
 
-        return elementWise(this.inputSize, ([j]) => sumOverIndices(this.outputSize, ([i]) => delta.get(i) * this.dfields[1].get([i, j])));
+        return elementWise(this.inputSize, ([j]) => sumOverIndices(this.outputSize, ([i]) => delta.get(i) * this.fields[1].get([i, j])));
     }
 }
 
@@ -304,26 +324,26 @@ class QuadraticLayer extends PolyLayer {
 
 class KernelLayer extends Layer {
     constructor(inputSize, inputChannels, outputChannels, kernelSpecs, randomRange = 1) {
-            super([...inputSize, inputChannels], null);
+        super([...inputSize, inputChannels], null);
 
-            this.kernelSpecs = kernelSpecs;
+        this.kernelSpecs = kernelSpecs;
 
-            this.default2d('kernelSize', this.kernelSpecs.kernelSize);
-            this.default2d('padding', 0);
-            this.default2d('innerPadding', 0);
-            this.default2d('stride', 1);
+        this.default2d('kernelSize', this.kernelSpecs.kernelSize);
+        this.default2d('padding', 0);
+        this.default2d('innerPadding', 0);
+        this.default2d('stride', 1);
 
-            this.kernelSpecs.inputSize = inputSize;
-            this.kernelSpecs.trueInputSize = [0, 1].map(i => 2 * this.kernelSpecs.padding[i] + this.kernelSpecs.inputSize[i] + this.kernelSpecs.innerPadding[i] * (this.kernelSpecs.inputSize[i] - 1));
-            this.kernelSpecs.outputSize = [0, 1].map(i => 1 + Math.floor((this.kernelSpecs.trueInputSize[i] - this.kernelSpecs.kernelSize[i]) / this.kernelSpecs.stride[i]));
+        this.kernelSpecs.inputSize = inputSize;
+        this.kernelSpecs.trueInputSize = [0, 1].map(i => 2 * this.kernelSpecs.padding[i] + this.kernelSpecs.inputSize[i] + this.kernelSpecs.innerPadding[i] * (this.kernelSpecs.inputSize[i] - 1));
+        this.kernelSpecs.outputSize = [0, 1].map(i => 1 + Math.floor((this.kernelSpecs.trueInputSize[i] - this.kernelSpecs.kernelSize[i]) / this.kernelSpecs.stride[i]));
 
-            this.outputSize = [...this.kernelSpecs.outputSize, outputChannels];
+        this.outputSize = [...this.kernelSpecs.outputSize, outputChannels];
 
-            this.kernels = Array(outputChannels).fill().map(() => Array(inputChannels).fill().map(() => new Kernel(this.kernelSpecs, randomRange)));
-            this.bias = Array(outputChannels).fill().map(() => initRand(randomRange));
-        }
-        // helper function that adds default value to kernel specs, or if the value is a number then it copies it twice so that its 2 dimensional.
-        // This allows users to theoretically define any size for any of these parameters
+        this.kernels = Array(outputChannels).fill().map(() => Array(inputChannels).fill().map(() => new Kernel(this.kernelSpecs, randomRange)));
+        this.bias = Array(outputChannels).fill().map(() => initRand(randomRange));
+    }
+    // helper function that adds default value to kernel specs, or if the value is a number then it copies it twice so that its 2 dimensional.
+    // This allows users to theoretically define any size for any of these parameters
     default2d(attribute, defaultValue) {
         if (this.kernelSpecs[attribute] === undefined) this.kernelSpecs[attribute] = [defaultValue, defaultValue];
         if (typeof this.kernelSpecs[attribute] === 'number') this.kernelSpecs[attribute] = [this.kernelSpecs[attribute], this.kernelSpecs[attribute]];
@@ -381,12 +401,12 @@ class KernelLayer extends Layer {
 
 class Kernel {
     constructor(kernelSpecs, randomRange = 1) {
-            for (const param in kernelSpecs) {
-                this[param] = kernelSpecs[param];
-            }
-            this.kernel = randomTensor(this.kernelSize, randomRange);
+        for (const param in kernelSpecs) {
+            this[param] = kernelSpecs[param];
         }
-        // helper function that loops over all inputs and outputs, but only on sections that would be affected by the kernel. This increases the speed by a lot over just having a regular elementWise()
+        this.kernel = randomTensor(this.kernelSize, randomRange);
+    }
+    // helper function that loops over all inputs and outputs, but only on sections that would be affected by the kernel. This increases the speed by a lot over just having a regular elementWise()
     inputOutputLoop(func) {
         for (let ox = 0; ox < this.outputSize[0]; ox++) {
             for (let oy = 0; oy < this.outputSize[1]; oy++) {

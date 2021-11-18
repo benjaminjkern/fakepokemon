@@ -7,6 +7,7 @@ const mutate = false;
 const backprop = true;
 
 let lowesterror = Number.MAX_VALUE;
+let avgerror = 0;
 let best;
 let autoencoder;
 let fakeOutput;
@@ -14,17 +15,18 @@ let loading = false;
 let loaded = false;
 let real;
 let inputImage;
+
 let fakeImages;
-let fakeImage;
-let realImage;
-let realFakeImage;
+let autoEncodedImages;
+let pickedPokemon;
 let count = 0;
+let iters = 0;
 const image = new Image(96, 96);
 
 let testPokemon = [];
 let pokemon = [];
 
-window.onload = function() {
+window.onload = function () {
     canvas = document.getElementById('canvas');
     let ctx = canvas.getContext('2d');
 
@@ -32,11 +34,11 @@ window.onload = function() {
     //     start(ctx);
     // }
 
-    window.onkeydown = function(e) {
+    window.onkeydown = function (e) {
         keysDown[e.code] = true;
     }
 
-    window.onkeyup = function(e) {
+    window.onkeyup = function (e) {
         delete keysDown[e.code];
     }
 
@@ -44,7 +46,7 @@ window.onload = function() {
 };
 
 const restart = (ctx) => {
-    autoencoder = new LinearNeuralNet([96 * 96, 1000, 10, 1000, 96 * 96], 1);
+    autoencoder = new LinearNeuralNet([96 * 96 * 4, 100, 20, 100, 96 * 96 * 4]);
 
     // autoencoder = newConvolutionalNeuralNet(1, [96, 96], [
     //     { channels: 3, kernelSpecs: { kernelSize: [9, 9], padding: 4, stride: 2 } },
@@ -90,7 +92,9 @@ const restart = (ctx) => {
     start(ctx);
 }
 
-const numPokemon = 2;
+const numPokemon = 649;
+
+const batchSize = 5;
 
 
 const start = (ctx) => {
@@ -98,8 +102,8 @@ const start = (ctx) => {
     if (!controlVars.killed) return;
     controlVars.kill = false;
 
-    canvas.width = 96 * Math.max(3, numPokemon);
-    canvas.height = 96 * 2;
+    canvas.width = 96 * batchSize;
+    canvas.height = 96 * 3;
 
     loading = true;
     initframe(ctx);
@@ -115,24 +119,23 @@ const drawLoop = (ctx) => {
     let imageData;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (let p = 0; p < numPokemon; p++) {
-        const encodedImage = fakeImages[p];
+    let encodedImage;
+    for (let p = 0; p < batchSize; p++) {
+        encodedImage = autoEncodedImages[p];
         imageData = ctx.getImageData(96 * p, 0, 96, 96);
-        encodedImage.data.forEach(mapToBlackAndWhite(imageData));
+        encodedImage.data.forEach(mapImage(imageData));
         ctx.putImageData(imageData, 96 * p, 0);
+
+        encodedImage = pickedPokemon[p];
+        imageData = ctx.getImageData(96 * p, 96, 96, 96);
+        encodedImage.data.forEach(mapImage(imageData));
+        ctx.putImageData(imageData, 96 * p, 96);
+
+        encodedImage = fakeImages[p];
+        imageData = ctx.getImageData(96 * p, 96 * 2, 96, 96);
+        encodedImage.data.forEach(mapImage(imageData));
+        ctx.putImageData(imageData, 96 * p, 96 * 2);
     }
-
-    // imageData = ctx.getImageData(0, 96, 96, 96);
-    // fakeImage.data.forEach(mapToBlackAndWhite(imageData));
-    // ctx.putImageData(imageData, 0, 96);
-
-    imageData = ctx.getImageData(96, 96, 96, 96);
-    realImage.data.forEach(mapToBlackAndWhite(imageData));
-    ctx.putImageData(imageData, 96, 96);
-
-    imageData = ctx.getImageData(96 * 2, 96, 96, 96);
-    realFakeImage.data.forEach(mapToBlackAndWhite(imageData));
-    ctx.putImageData(imageData, 96 * 2, 96);
 }
 
 const mapToBlackAndWhite = (imageData) => (o, i) => {
@@ -141,6 +144,13 @@ const mapToBlackAndWhite = (imageData) => (o, i) => {
     imageData.data[4 * i + 2] = Math.floor(o * 256)
     imageData.data[4 * i + 3] = 255;
 }
+
+const mapImage = (imageData) => (o, i) => {
+    imageData.data[i] = Math.floor(o * 256);
+}
+
+const avgweight = (count) => Math.exp(1) * Math.log(count + 1);
+const totalweight = (count) => Math.exp(1) * count * Math.log(count + 1);
 
 const initframe = (ctx) => {
     if (loading) {
@@ -153,22 +163,22 @@ const initframe = (ctx) => {
 
                 ctx.drawImage(image, 0, 0);
                 const imageData = ctx.getImageData(0, 0, 96, 96);
-                inputImage = [];
-                for (let i = 0; i < 96; i++) {
-                    for (let j = 0; j < 96; j++) {
-                        const index = j + 96 * i;
-                        inputImage[index] = (imageData.data[4 * index] + imageData.data[4 * index + 1] + imageData.data[4 * index + 2]) / 255 / 3;
-                    }
-                }
-                // inputImage = [...imageData.data].map(d => d / 255);
+                // inputImage = [];
+                // for (let i = 0; i < 96; i++) {
+                //     for (let j = 0; j < 96; j++) {
+                //         const index = j + 96 * i;
+                //         inputImage[index] = (imageData.data[4 * index] + imageData.data[4 * index + 1] + imageData.data[4 * index + 2]) / 255 / 3;
+                //     }
+                // }
+                inputImage = [...imageData.data].map(d => d / 255);
             }
         }
         if (loaded) {
-            pokemon[pokemon.length] = newTensor([96 * 96], inputImage);
+            pokemon[pokemon.length] = newTensor([96 * 96 * 4], inputImage);
             // pokemon[pokemon.length] = newTensor([96, 96, 1], inputImage);
             pokemon[pokemon.length - 1].name = Math.random();
             loaded = false;
-            if (pokemon.length >= numPokemon * 2)
+            if (pokemon.length >= numPokemon)
                 loading = false;
         }
 
@@ -182,50 +192,55 @@ const initframe = (ctx) => {
 }
 
 const makeframe = (ctx) => {
-    count++;
+    count++; iters++;
     if (controlVars.kill) {
         controlVars.killed = true;
-        setTimeout(() => start(ctx), 1000);
+        if (controlVars.continue) setTimeout(() => start(ctx), 1000);
         return;
     }
     controlVars.killed = false;
 
-    autoencoder.error(pokemon, pokemon);
+    pickedPokemon = Array(batchSize).fill().map(() => pokemon[Math.floor(Math.random() * numPokemon)]);
+
+    autoencoder.error(pickedPokemon, pickedPokemon);
+    avgerror = (avgerror * totalweight(iters - 1) + avgweight(iters) * autoencoder.lastError) / totalweight(iters);
 
     const status = document.getElementById('status');
+    const stats = document.getElementById('stats');
+    const dateSpan = `<span style="color: gray; font-size: 0.75em"> - ${new Date().toLocaleString()}</span>`;
     if (autoencoder.lastError < lowesterror) {
-        lowesterror = autoencoder.lastError
-        status.innerHTML = '<span style="color:red">' + autoencoder.lastError + '</span><br>' + status.innerHTML;
+        lowesterror = autoencoder.lastError;
+        status.innerHTML = `<span style="color: red">${autoencoder.lastError}</span>${dateSpan}<br>${status.innerHTML}`;
     } else {
-        status.innerHTML = autoencoder.lastError + '<br>' + status.innerHTML;
+        status.innerHTML = `${autoencoder.lastError}${dateSpan}<br>${status.innerHTML}`;
     }
+    stats.innerHTML = `<b>Best</b>: ${lowesterror}<br><b>Average</b>: ${avgerror}`;
 
-    autoencoder.backProp(pokemon, pokemon, 0.1);
+    autoencoder.backProp(pickedPokemon, pickedPokemon, 0.1);
     // console.log(autoencoder);
 
-    fakeImages = autoencoder.pass(pokemon);
+    autoEncodedImages = autoencoder.pass(pickedPokemon);
 
-    realImage = testPokemon[Math.floor(Math.random() * testPokemon.length)];
+    const decoder = autoencoder.copy();
+    const mid = Math.floor((decoder.layers.length) / 2 + 1);
+    decoder.layers = decoder.layers.slice(mid);
+    const randomInput = Array(batchSize).fill().map(() => randomTensor(decoder.layers[0].inputSize));
+    fakeImages = decoder.pass(randomInput);
 
-    realFakeImage = autoencoder.pass([realImage])[0];
-
-    // const decoder = {...autoencoder };
-    // const mid = Math.floor(decoder.layers.length / 2);
-    // decoder.layers = decoder.layers.slice(mid);
-    // const randomInput = randomTensor(decoder.layers[0].inputSize);
-    // fakeImage = decoder.pass([randomInput]);
-
-    // const randomInput = randomTensor([...autoencoder.layers[0].kernelSpecs.inputSize, autoencoder.layers[0].inputChannels]);
-    // console.log(randomInput);
-    // fakeImage = autoencoder.pass(randomInput);
-
-    // const encoder = mutateNeuralNet(autoencoder, 0);
+    // const encoder = autoencoder.copy()
     // encoder.layers = encoder.layers.slice(0, mid);
-    // for (const poke of pokemon) {
-    //     console.log(encoder.pass(poke));
+    // console.log(autoencoder.layers[0].pass([pok]));
+    // for (const pok of pokemon) {
+    //     console.log(autoencoder.layers[0].pass([pok]));
     // }
+    // console.log(encoder.pass(pokemon));
 
     setTimeout(() => {
         makeframe(ctx);
     }, 1);
+}
+
+window.onclick = () => {
+    controlVars.kill = true;
+    controlVars.continue = false;
 }
