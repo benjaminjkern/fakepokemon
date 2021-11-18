@@ -31,8 +31,7 @@ const zerosTensor = (dim) => {
         data,
         get(index) {
             if (typeof index !== 'object') return this.get([index]);
-            const i = createIdx(index, this.dim);
-            return this.get_byDataIdx(i);
+            return this.get_byDataIdx(createIdx(index, this.dim));
         },
         get_byDataIdx(dataIdx) {
             if (this.data[dataIdx] === undefined) {
@@ -66,7 +65,7 @@ const zerosTensor = (dim) => {
             this.data[dataIdx] = value;
         },
         map(mapFunc) {
-            return newSparseTensor(this.dim, data.map(mapFunc));
+            return newSparseTensor(this.dim, this.data.map(mapFunc));
         }
     };
 }
