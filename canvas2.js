@@ -46,7 +46,7 @@ window.onload = function () {
 };
 
 const restart = (ctx) => {
-    autoencoder = new LinearNeuralNet([96 * 96 * 4, 100, 20, 100, 96 * 96 * 4]);
+    autoencoder = new LinearNeuralNet([96 * 96 * 4, 10, 10, 10, 96 * 96 * 4]);
 
     // autoencoder = newConvolutionalNeuralNet(1, [96, 96], [
     //     { channels: 3, kernelSpecs: { kernelSize: [9, 9], padding: 4, stride: 2 } },
@@ -92,9 +92,9 @@ const restart = (ctx) => {
     start(ctx);
 }
 
-const numPokemon = 649;
+const numPokemon = 9;
 
-const batchSize = 5;
+const batchSize = 3;
 
 
 const start = (ctx) => {
@@ -176,7 +176,7 @@ const initframe = (ctx) => {
         if (loaded) {
             pokemon[pokemon.length] = newTensor([96 * 96 * 4], inputImage);
             // pokemon[pokemon.length] = newTensor([96, 96, 1], inputImage);
-            pokemon[pokemon.length - 1].name = Math.random();
+            pokemon[pokemon.length - 1].name = pokemon.length;
             loaded = false;
             if (pokemon.length >= numPokemon)
                 loading = false;
@@ -190,6 +190,7 @@ const initframe = (ctx) => {
         drawLoop(ctx);
     }
 }
+previouslyPicked = {};
 
 const makeframe = (ctx) => {
     count++; iters++;
@@ -200,10 +201,24 @@ const makeframe = (ctx) => {
     }
     controlVars.killed = false;
 
-    pickedPokemon = Array(batchSize).fill().map(() => pokemon[Math.floor(Math.random() * numPokemon)]);
+    const validPokemon = pokemon.filter(pok => !previouslyPicked[pok.name]);
+    if (validPokemon.length >= batchSize) {
+        pickedPokemon = pickUnique(validPokemon, batchSize);
+    } else {
+        previouslyPicked = {};
+        for (pok of validPokemon) {
+            previouslyPicked[pok.name] = true;
+        }
+        const validPokemon2 = pokemon.filter(pok => !previouslyPicked[pok.name]);
+        pickedPokemon = [...pickUnique(validPokemon, validPokemon.length), ...pickUnique(validPokemon2, batchSize - validPokemon.length)];
+    }
+    for (pok of pickedPokemon) {
+        previouslyPicked[pok.name] = true;
+    }
+    // pickedPokemon = pokemon;
 
     autoencoder.error(pickedPokemon, pickedPokemon);
-    avgerror = (avgerror * totalweight(iters - 1) + avgweight(iters) * autoencoder.lastError) / totalweight(iters);
+    avgerror = (avgerror * (iters - 1) + autoencoder.lastError) / (iters);
 
     const status = document.getElementById('status');
     const stats = document.getElementById('stats');
@@ -243,4 +258,10 @@ const makeframe = (ctx) => {
 window.onclick = () => {
     controlVars.kill = true;
     controlVars.continue = false;
+}
+
+const pickUnique = (list, count) => {
+    if (count === 0) return [];
+    const r = Math.floor(Math.random() * list.length);
+    return [list[r], ...pickUnique(list.filter((_, i) => i !== r), count - 1)];
 }
