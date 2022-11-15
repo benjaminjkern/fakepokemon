@@ -4,7 +4,7 @@ class NeuralNet {
         this.name = name;
 
         this.nudgeOnFlat = options.nudgeOnFlat || true;
-        this.maxGradient = options.maxGradient || 100;
+        this.maxGradient = options.maxGradient || 100000000000;
     }
     pass(batch) {
         // console.log("PASS");
@@ -45,7 +45,7 @@ class NeuralNet {
             return;
         }
 
-        if (Number.isNaN(gradientLength)) throw 'UGH';
+        if (Number.isNaN(gradientLength)) window.location.reload();
 
         const clipAmount = Math.min(1, this.maxGradient / gradientLength);
 
