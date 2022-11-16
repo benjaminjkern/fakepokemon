@@ -319,21 +319,26 @@ const makeframe = (ctx) => {
     }
     stats.innerHTML = `<b>Best</b>: ${lowesterror}<br><b>Average</b>: ${avgerror}`;
 
-    autoencoder.backProp(pickedPokemon, pickedPokemon, 0.00000001);
+    autoencoder.backProp(
+        pickedPokemon,
+        pickedPokemon,
+        0.001,
+        batchSize / numPokemon
+    );
     // console.log(autoencoder);
 
     autoEncodedImages = autoencoder.pass(pickedPokemon);
 
     const decoder = autoencoder.copy();
-    const encoder = autoencoder.copy();
+    // const encoder = autoencoder.copy();
     const mid = Math.floor(decoder.layers.length / 2 + 1);
     decoder.layers = decoder.layers.slice(mid);
-    encoder.layers = encoder.layers.slice(0, mid - 1);
+    // encoder.layers = encoder.layers.slice(0, mid - 1);
     const randomInput = Array(batchSize)
         .fill()
         .map(() => randomTensor(decoder.layers[0].inputSize));
     fakeImages = decoder.pass(randomInput);
-    console.log(encoder.pass(pickedPokemon).map((t) => t.get(0)));
+    // console.log(encoder.pass(pickedPokemon).map((t) => t.data.join(",")));
 
     // const encoder = autoencoder.copy()
     // encoder.layers = encoder.layers.slice(0, mid);
