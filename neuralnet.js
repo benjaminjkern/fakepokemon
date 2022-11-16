@@ -30,7 +30,7 @@ class NeuralNet {
             batch.length;
         return this.lastError;
     }
-    backProp(batch, targets, alpha) {
+    backProp(batch, targets, alpha, proportion) {
         const results = this.pass(batch);
         let batchDelta = results.map((result, b) =>
             elementWise(result.dim, (i) => result.get(i) - targets[b].get(i))
@@ -66,7 +66,7 @@ class NeuralNet {
         if (gradientLength === 0) {
             if (this.nudgeOnFlat) {
                 console.log("Network has reached local minimum! Nudging!");
-                this.layers.forEach((layer) => layer.nudge(effectiveAlpha));
+                this.layers.forEach((layer) => layer.nudge(alpha));
             }
             return;
         }
@@ -79,7 +79,7 @@ class NeuralNet {
         const clipAmount = Math.min(1, this.maxGradient / gradientLength);
 
         for (let n = this.layers.length - 1; n >= 0; n--) {
-            this.layers[n].adjust(effectiveAlpha * clipAmount);
+            this.layers[n].adjust(effectiveAlpha * clipAmount, proportion);
         }
     }
 }
@@ -91,6 +91,7 @@ class LinearNeuralNet extends NeuralNet {
     constructor(
         layerCounts,
         randomRange = 1,
+        // activation = lrelu(0.1),
         activation = ReLU,
         finalActivation
     ) {
@@ -361,8 +362,22 @@ class BatchNormalizationLayer extends Layer {
                 (self.stdev.get_byDataIdx(index) || 1)
         );
     }
-    setOneSquaredDerivative(delta, batchIdx, finalOutputSize, lastLayer) {
-        throw "Quadratic Descent is not supported for batch normalization layers (yet)!";
+    setOneSquaredDerivative(lambda, batchIdx, finalOutputSize, lastLayer) {
+        if (lastLayer) return;
+        if (!this.stdev) return lambda;
+        const self = this;
+        if (!lambda.diagonal)
+            return lambda.map(
+                (l, index) =>
+                    lambda.get_byDataIdx(index) /
+                    (self.stdev.get_byDataIdx(index) || 1)
+            );
+        return {
+            ...lambda,
+            diagonal: lambda.diagonal.map(
+                (l, index) => 1 / (self.stdev.get_byDataIdx(index) || 1)
+            ),
+        };
     }
     adjust(alpha) {
         // There are no fields to adjust in a batch normalization layer
@@ -399,16 +414,17 @@ class PolyLayer extends Layer {
     setOneSquaredDerivative(delta, batchIdx, finalOutputSize, lastLayer) {
         throw "Not implemented for arbitrary power polynomial layers.";
     }
-    adjust(alpha) {
+    adjust(alpha, proportion) {
         this.fields.forEach((_, p) => {
             elementWise(this.fields[p].dim, (index) => {
+                // if (this.lfields[p].get(index) === 0) throw ["ugh", p, index];
                 this.fields[p].add_to(
                     index,
                     // -alpha * this.dfields[p].get(index)(this.lfields[p].get(index) > 0) ?
                     -this.dfields[p].get(index) *
                         (this.lfields[p].get(index) > 0
-                            ? 1 / this.lfields[p].get(index)
-                            : alpha)
+                            ? proportion / this.lfields[p].get(index)
+                            : 0)
                 );
             });
         });
@@ -484,7 +500,9 @@ class LinearLayer extends PolyLayer {
                 });
                 this.lfields[0].add_to([i], tempLambda.get([i]));
             });
+
             if (lastLayer) return;
+
             return elementWise([finalOutputSize, this.inputSize], ([k, j]) =>
                 sumOverIndices(
                     this.outputSize,
@@ -492,6 +510,7 @@ class LinearLayer extends PolyLayer {
                 )
             );
         } else {
+            // diagonal
             const tempLambda = zerosTensor([this.outputSize]);
             elementWise(this.outputSize, ([i]) => {
                 tempLambda.add_to([i], lambda.get([i, i]) ** 2);
@@ -507,7 +526,6 @@ class LinearLayer extends PolyLayer {
                 });
                 this.lfields[0].add_to([i], tempLambda.get([i]));
             });
-
             if (lastLayer) return;
             return elementWise(
                 [finalOutputSize, this.inputSize],
