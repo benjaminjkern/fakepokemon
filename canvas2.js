@@ -27,8 +27,8 @@ let testPokemon = [];
 let pokemon = [];
 
 window.onload = function () {
-    canvas = document.getElementById('canvas');
-    let ctx = canvas.getContext('2d');
+    canvas = document.getElementById("canvas");
+    let ctx = canvas.getContext("2d");
 
     // window.onresize = function() {
     //     start(ctx);
@@ -36,34 +36,118 @@ window.onload = function () {
 
     window.onkeydown = function (e) {
         keysDown[e.code] = true;
-    }
+    };
 
     window.onkeyup = function (e) {
         delete keysDown[e.code];
-    }
-
+    };
     restart(ctx);
 };
 
 const restart = (ctx) => {
-    autoencoder = new LinearNeuralNet([96 * 96 * 4, 10, 10, 10, 96 * 96 * 4]);
-
-    // autoencoder = newConvolutionalNeuralNet(1, [96, 96], [
-    //     { channels: 3, kernelSpecs: { kernelSize: [9, 9], padding: 4, stride: 2 } },
-    //     { channels: 3, kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 } },
-    //     { channels: 5, kernelSpecs: { kernelSize: [5, 5], padding: 2, stride: 1 }, },
-    //     { channels: 5, kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 } },
-    //     { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 1, stride: 1 } },
-    //     { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 } },
-    //     { channels: 10, kernelSpecs: { kernelSize: [5, 5], padding: 0, stride: 1 } },
-    //     { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 2, innerPadding: 1 } },
-    //     { channels: 8, kernelSpecs: { kernelSize: [3, 3], padding: 1, innerPadding: 1 } },
-    //     { channels: 5, kernelSpecs: { kernelSize: [3, 3], padding: 1, innerPadding: 1 } },
-    //     { channels: 5, kernelSpecs: { kernelSize: [5, 5], padding: 4, innerPadding: 1 } },
-    //     { channels: 3, kernelSpecs: { kernelSize: [3, 3], padding: 2, innerPadding: 1 } },
-    //     { channels: 3, kernelSpecs: { kernelSize: [9, 9], padding: 7, innerPadding: 1 } },
-    //     { channels: 1, kernelSpecs: { kernelSize: [10, 10], padding: 7, innerPadding: 0 } },
+    autoencoder = new LinearNeuralNet([96 * 96 * 4, 1, 96 * 96 * 4]);
+    // autoencoder = new LinearNeuralNet([
+    //     96 * 96 * 4,
+    //     100,
+    //     60,
+    //     30,
+    //     10,
+    //     30,
+    //     60,
+    //     100,
+    //     96 * 96 * 4,
     // ]);
+
+    // autoencoder = new ConvolutionalNeuralNet(
+    //     1,
+    //     [96, 96],
+    //     [
+    //         {
+    //             channels: 3,
+    //             kernelSpecs: { kernelSize: [9, 9], padding: 4, stride: 2 },
+    //         },
+    //         {
+    //             channels: 3,
+    //             kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 },
+    //         },
+    //         {
+    //             channels: 5,
+    //             kernelSpecs: { kernelSize: [5, 5], padding: 2, stride: 1 },
+    //         },
+    //         {
+    //             channels: 5,
+    //             kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 },
+    //         },
+    //         {
+    //             channels: 8,
+    //             kernelSpecs: { kernelSize: [3, 3], padding: 1, stride: 1 },
+    //         },
+    //         {
+    //             channels: 8,
+    //             kernelSpecs: { kernelSize: [3, 3], padding: 0, stride: 2 },
+    //         },
+    //         {
+    //             channels: 10,
+    //             kernelSpecs: { kernelSize: [5, 5], padding: 0, stride: 1 },
+    //         },
+    //         {
+    //             channels: 8,
+    //             kernelSpecs: {
+    //                 kernelSize: [3, 3],
+    //                 padding: 2,
+    //                 innerPadding: 1,
+    //             },
+    //         },
+    //         {
+    //             channels: 8,
+    //             kernelSpecs: {
+    //                 kernelSize: [3, 3],
+    //                 padding: 1,
+    //                 innerPadding: 1,
+    //             },
+    //         },
+    //         {
+    //             channels: 5,
+    //             kernelSpecs: {
+    //                 kernelSize: [3, 3],
+    //                 padding: 1,
+    //                 innerPadding: 1,
+    //             },
+    //         },
+    //         {
+    //             channels: 5,
+    //             kernelSpecs: {
+    //                 kernelSize: [5, 5],
+    //                 padding: 4,
+    //                 innerPadding: 1,
+    //             },
+    //         },
+    //         {
+    //             channels: 3,
+    //             kernelSpecs: {
+    //                 kernelSize: [3, 3],
+    //                 padding: 2,
+    //                 innerPadding: 1,
+    //             },
+    //         },
+    //         {
+    //             channels: 3,
+    //             kernelSpecs: {
+    //                 kernelSize: [9, 9],
+    //                 padding: 7,
+    //                 innerPadding: 1,
+    //             },
+    //         },
+    //         {
+    //             channels: 1,
+    //             kernelSpecs: {
+    //                 kernelSize: [10, 10],
+    //                 padding: 7,
+    //                 innerPadding: 0,
+    //             },
+    //         },
+    //     ]
+    // );
 
     // autoencoder.layers[3].bias[0] = 0;
 
@@ -90,12 +174,11 @@ const restart = (ctx) => {
     // console.log(testNet.pass(input));
 
     start(ctx);
-}
+};
 
-const numPokemon = 9;
+const numPokemon = 2;
 
-const batchSize = 3;
-
+const batchSize = 2;
 
 const start = (ctx) => {
     controlVars.kill = true;
@@ -108,7 +191,7 @@ const start = (ctx) => {
     loading = true;
     initframe(ctx);
     // makeframe(ctx);
-}
+};
 
 const drawLoop = (ctx) => {
     setTimeout(() => drawLoop(ctx), 1000);
@@ -136,18 +219,18 @@ const drawLoop = (ctx) => {
         encodedImage.data.forEach(mapImage(imageData));
         ctx.putImageData(imageData, 96 * p, 96 * 2);
     }
-}
+};
 
 const mapToBlackAndWhite = (imageData) => (o, i) => {
-    imageData.data[4 * i] = Math.floor(o * 256)
-    imageData.data[4 * i + 1] = Math.floor(o * 256)
-    imageData.data[4 * i + 2] = Math.floor(o * 256)
+    imageData.data[4 * i] = Math.floor(o * 256);
+    imageData.data[4 * i + 1] = Math.floor(o * 256);
+    imageData.data[4 * i + 2] = Math.floor(o * 256);
     imageData.data[4 * i + 3] = 255;
-}
+};
 
 const mapImage = (imageData) => (o, i) => {
     imageData.data[i] = Math.floor(o * 256);
-}
+};
 
 const avgweight = (count) => Math.exp(1) * Math.log(count + 1);
 const totalweight = (count) => Math.exp(1) * count * Math.log(count + 1);
@@ -155,7 +238,7 @@ const totalweight = (count) => Math.exp(1) * count * Math.log(count + 1);
 const initframe = (ctx) => {
     if (loading) {
         if (!loaded) {
-            image.src = 'black-white/' + (pokemon.length + 1) + '.png';
+            image.src = "black-white/" + (pokemon.length + 1) + ".png";
 
             image.onload = () => {
                 loaded = true;
@@ -170,16 +253,15 @@ const initframe = (ctx) => {
                 //         inputImage[index] = (imageData.data[4 * index] + imageData.data[4 * index + 1] + imageData.data[4 * index + 2]) / 255 / 3;
                 //     }
                 // }
-                inputImage = [...imageData.data].map(d => d / 255);
-            }
+                inputImage = [...imageData.data].map((d) => d / 255);
+            };
         }
         if (loaded) {
             pokemon[pokemon.length] = newTensor([96 * 96 * 4], inputImage);
             // pokemon[pokemon.length] = newTensor([96, 96, 1], inputImage);
             pokemon[pokemon.length - 1].name = pokemon.length;
             loaded = false;
-            if (pokemon.length >= numPokemon)
-                loading = false;
+            if (pokemon.length >= numPokemon) loading = false;
         }
 
         setTimeout(() => initframe(ctx), 1);
@@ -189,11 +271,12 @@ const initframe = (ctx) => {
         makeframe(ctx);
         drawLoop(ctx);
     }
-}
+};
 previouslyPicked = {};
 
 const makeframe = (ctx) => {
-    count++; iters++;
+    count++;
+    iters++;
     if (controlVars.kill) {
         controlVars.killed = true;
         if (controlVars.continue) setTimeout(() => start(ctx), 1000);
@@ -201,7 +284,7 @@ const makeframe = (ctx) => {
     }
     controlVars.killed = false;
 
-    const validPokemon = pokemon.filter(pok => !previouslyPicked[pok.name]);
+    const validPokemon = pokemon.filter((pok) => !previouslyPicked[pok.name]);
     if (validPokemon.length >= batchSize) {
         pickedPokemon = pickUnique(validPokemon, batchSize);
     } else {
@@ -209,8 +292,13 @@ const makeframe = (ctx) => {
         for (pok of validPokemon) {
             previouslyPicked[pok.name] = true;
         }
-        const validPokemon2 = pokemon.filter(pok => !previouslyPicked[pok.name]);
-        pickedPokemon = [...pickUnique(validPokemon, validPokemon.length), ...pickUnique(validPokemon2, batchSize - validPokemon.length)];
+        const validPokemon2 = pokemon.filter(
+            (pok) => !previouslyPicked[pok.name]
+        );
+        pickedPokemon = [
+            ...pickUnique(validPokemon, validPokemon.length),
+            ...pickUnique(validPokemon2, batchSize - validPokemon.length),
+        ];
     }
     for (pok of pickedPokemon) {
         previouslyPicked[pok.name] = true;
@@ -218,10 +306,10 @@ const makeframe = (ctx) => {
     // pickedPokemon = pokemon;
 
     autoencoder.error(pickedPokemon, pickedPokemon);
-    avgerror = (avgerror * (iters - 1) + autoencoder.lastError) / (iters);
+    avgerror = (avgerror * (iters - 1) + autoencoder.lastError) / iters;
 
-    const status = document.getElementById('status');
-    const stats = document.getElementById('stats');
+    const status = document.getElementById("status");
+    const stats = document.getElementById("stats");
     const dateSpan = `<span style="color: gray; font-size: 0.75em"> - ${new Date().toLocaleString()}</span>`;
     if (autoencoder.lastError < lowesterror) {
         lowesterror = autoencoder.lastError;
@@ -231,16 +319,21 @@ const makeframe = (ctx) => {
     }
     stats.innerHTML = `<b>Best</b>: ${lowesterror}<br><b>Average</b>: ${avgerror}`;
 
-    autoencoder.backProp(pickedPokemon, pickedPokemon, 0.1);
+    autoencoder.backProp(pickedPokemon, pickedPokemon, 0.00000001);
     // console.log(autoencoder);
 
     autoEncodedImages = autoencoder.pass(pickedPokemon);
 
     const decoder = autoencoder.copy();
-    const mid = Math.floor((decoder.layers.length) / 2 + 1);
+    const encoder = autoencoder.copy();
+    const mid = Math.floor(decoder.layers.length / 2 + 1);
     decoder.layers = decoder.layers.slice(mid);
-    const randomInput = Array(batchSize).fill().map(() => randomTensor(decoder.layers[0].inputSize));
+    encoder.layers = encoder.layers.slice(0, mid - 1);
+    const randomInput = Array(batchSize)
+        .fill()
+        .map(() => randomTensor(decoder.layers[0].inputSize));
     fakeImages = decoder.pass(randomInput);
+    console.log(encoder.pass(pickedPokemon).map((t) => t.get(0)));
 
     // const encoder = autoencoder.copy()
     // encoder.layers = encoder.layers.slice(0, mid);
@@ -253,15 +346,21 @@ const makeframe = (ctx) => {
     setTimeout(() => {
         makeframe(ctx);
     }, 1);
-}
+};
 
 window.onclick = () => {
     controlVars.kill = true;
     controlVars.continue = false;
-}
+};
 
 const pickUnique = (list, count) => {
     if (count === 0) return [];
     const r = Math.floor(Math.random() * list.length);
-    return [list[r], ...pickUnique(list.filter((_, i) => i !== r), count - 1)];
-}
+    return [
+        list[r],
+        ...pickUnique(
+            list.filter((_, i) => i !== r),
+            count - 1
+        ),
+    ];
+};

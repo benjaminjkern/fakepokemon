@@ -1,5 +1,9 @@
 class NeuralNet {
-    constructor(layers, name = Math.random().toString(36).substring(2), options = {}) {
+    constructor(
+        layers,
+        name = Math.random().toString(36).substring(2),
+        options = {}
+    ) {
         this.layers = layers;
         this.name = name;
 
@@ -7,45 +11,70 @@ class NeuralNet {
         this.maxGradient = options.maxGradient || 100000000000;
     }
     pass(batch) {
-        // console.log("PASS");
         return this.layers.reduce((currentValues, layer) => {
             const value = layer.pass(currentValues);
-            // console.log(value);
             return value;
         }, batch);
     }
     error(batch, targets) {
         const results = this.pass(batch);
-        this.lastError = sumOverIndices([results.length], ([b]) =>
-            sumOverIndices(results[b].dim, index => (results[b].get(index) - targets[b].get(index)) ** 2)
-        ) * 0.5 / batch.length;
+        this.lastError =
+            (sumOverIndices([results.length], ([b]) =>
+                sumOverIndices(
+                    results[b].dim,
+                    (index) =>
+                        (results[b].get(index) - targets[b].get(index)) ** 2
+                )
+            ) *
+                0.5) /
+            batch.length;
         return this.lastError;
     }
     backProp(batch, targets, alpha) {
-        // console.log("BACKPROP");
         const results = this.pass(batch);
         let batchDelta = results.map((result, b) =>
             elementWise(result.dim, (i) => result.get(i) - targets[b].get(i))
         );
+        let batchLambda = results.map((result, b) => ({
+            diagonal: Array(
+                this.layers[this.layers.length - 1].outputSize[0]
+            ).fill(1),
+            get([i, j]) {
+                if (i !== j) return 0;
+                return this.diagonal[i];
+            },
+        }));
         for (let n = this.layers.length - 1; n >= 0; n--) {
-            // console.log(this.layers[n].constructor.name, batchDelta);
-            batchDelta = this.layers[n].setDerivatives(batchDelta);
+            [batchDelta, batchLambda] = this.layers[n].setDerivatives(
+                batchDelta,
+                batchLambda,
+                this.layers[this.layers.length - 1].outputSize[0],
+                n === 0
+            );
         }
 
         // const effectiveAlpha = alpha * Math.log(this.lastError + 1) / batch.length;
         const effectiveAlpha = alpha / batch.length;
 
-        const gradientLength = Math.sqrt(this.layers.reduce((p, layer) => p + layer.gradientLengthSquared(), 0));
+        const gradientLength = Math.sqrt(
+            this.layers.reduce(
+                (p, layer) => p + layer.gradientLengthSquared(),
+                0
+            )
+        );
 
         if (gradientLength === 0) {
             if (this.nudgeOnFlat) {
                 console.log("Network has reached local minimum! Nudging!");
-                this.layers.forEach(layer => layer.nudge(effectiveAlpha));
+                this.layers.forEach((layer) => layer.nudge(effectiveAlpha));
             }
             return;
         }
 
-        if (Number.isNaN(gradientLength)) window.location.reload();
+        if (Number.isNaN(gradientLength)) {
+            // window.location.reload();
+            throw "oops";
+        }
 
         const clipAmount = Math.min(1, this.maxGradient / gradientLength);
 
@@ -55,20 +84,34 @@ class NeuralNet {
     }
 }
 
-
 //-------------------------------------------------------------------------------------------------------------------
 // Different types of out-of-the-box neural nets
 //-------------------------------------------------------------------------------------------------------------------
 class LinearNeuralNet extends NeuralNet {
-    constructor(layerCounts, randomRange = 1, activation = ReLU, finalActivation = activation) {
+    constructor(
+        layerCounts,
+        randomRange = 1,
+        activation = ReLU,
+        finalActivation
+    ) {
         super([]);
         for (const [i, layerCount] of layerCounts.slice(1).entries()) {
-            this.layers.push(new LinearLayer(layerCounts[i], layerCount, randomRange));
+            this.layers.push(
+                new LinearLayer(layerCounts[i], layerCount, randomRange)
+            );
             if (i < layerCounts.length - 2) {
-                this.layers.push(new BatchNormalizationLayer(layerCount));
+                // this.layers.push(new BatchNormalizationLayer(layerCount));
                 this.layers.push(new ActivationLayer(layerCount, activation));
             }
         }
+
+        if (finalActivation)
+            this.layers.push(
+                new ActivationLayer(
+                    layerCounts[layerCounts.length - 1],
+                    finalActivation
+                )
+            );
     }
     copy() {
         const newNet = new NeuralNet([]);
@@ -81,23 +124,55 @@ class QuadraticNeuralNet extends NeuralNet {
     constructor(layerCounts, randomRange = 1) {
         // You dont really need activations for quadratic neural nets, although you can definitely still have them.
         // These out-of-the-box neural nets dont have them by default though.
-        super(layerCounts.slice(1).reduce((p, layerCount, i) => [...p,
-        new QuadraticLayer(layerCounts[i], layerCount, randomRange),
-        new BatchNormalizationLayer(layerCount)
-        ], []));
+        super(
+            layerCounts
+                .slice(1)
+                .reduce(
+                    (p, layerCount, i) => [
+                        ...p,
+                        new QuadraticLayer(
+                            layerCounts[i],
+                            layerCount,
+                            randomRange
+                        ),
+                        new BatchNormalizationLayer(layerCount),
+                    ],
+                    []
+                )
+        );
     }
 }
 
 class ConvolutionalNeuralNet extends NeuralNet {
-    constructor(inputChannels, inputSize, kernelLayerSpecs, activation = ReLU, finalActivation = activation, randomRange = 1) {
+    constructor(
+        inputChannels,
+        inputSize,
+        kernelLayerSpecs,
+        activation = ReLU,
+        finalActivation = activation,
+        randomRange = 1
+    ) {
         super([]);
-        for (const [i, { channels, kernelSpecs }] of kernelLayerSpecs.entries()) {
-            let size = i === 0 ? [...inputSize, inputChannels] : this.layers[this.layers.length - 3].outputSize;
+        for (const [
+            i,
+            { channels, kernelSpecs },
+        ] of kernelLayerSpecs.entries()) {
+            let size =
+                i === 0
+                    ? [...inputSize, inputChannels]
+                    : this.layers[this.layers.length - 3].outputSize;
             const layer = new KernelLayer(...size, channels, kernelSpecs);
-            console.log(layer.outputSize, dimSize(layer.outputSize));
+            // console.log(layer.outputSize, dimSize(layer.outputSize));
             this.layers.push(layer);
             this.layers.push(new BatchNormalizationLayer(layer.outputSize));
-            this.layers.push(new ActivationLayer(layer.outputSize, i < kernelLayerSpecs.length - 1 ? activation : finalActivation));
+            this.layers.push(
+                new ActivationLayer(
+                    layer.outputSize,
+                    i < kernelLayerSpecs.length - 1
+                        ? activation
+                        : finalActivation
+                )
+            );
         }
     }
 }
@@ -108,10 +183,9 @@ class ConvolutionalNeuralNet extends NeuralNet {
 
 class Layer {
     constructor(inputSize, outputSize) {
-        if (this.constructor == Layer)
-            throw "Abstract Class!";
+        if (this.constructor == Layer) throw "Abstract Class!";
 
-        if (typeof inputSize === 'number') {
+        if (typeof inputSize === "number") {
             this.inputSize = [inputSize];
             this.outputSize = [outputSize];
         } else {
@@ -123,13 +197,25 @@ class Layer {
     // Pass a batch of inputs through the layer
     pass(batch) {
         this.lastInput = batch;
-        this.lastOutput = batch.map(input => this.passOne(input));
+        this.lastOutput = batch.map((input) => this.passOne(input));
         return this.lastOutput;
     }
     // Given the deltas of the layer above it, calculate the derivatives of all fields
-    setDerivatives(batchDelta) {
+    setDerivatives(batchDelta, batchLambda, finalOutputSize, lastLayer) {
         this.initDerivatives();
-        return batchDelta.map((delta, batchIdx) => this.setOneDerivative(delta, batchIdx));
+        return [
+            batchDelta.map((delta, batchIdx) =>
+                this.setOneDerivative(delta, batchIdx, lastLayer)
+            ),
+            batchLambda.map((lambda, batchIdx) =>
+                this.setOneSquaredDerivative(
+                    lambda,
+                    batchIdx,
+                    finalOutputSize,
+                    lastLayer
+                )
+            ),
+        ];
     }
 
     // Abstract methods
@@ -143,7 +229,11 @@ class Layer {
         throw "Abstract Method!";
     }
     // Given the delta of the layer above it, calculate the derivative contribution of one input
-    setOneDerivative(delta, batchIdx) {
+    setOneDerivative(delta, batchIdx, lastLayer) {
+        throw "Abstract Method!";
+    }
+    // Given the lambda of the layer above it, calculate the second derivative contribution of one input
+    setOneSquaredDerivative(lambda, batchIdx, finalOutputSize, lastLayer) {
         throw "Abstract Method!";
     }
     // Adjust all fields according to their calculated derivatives
@@ -166,14 +256,44 @@ class ActivationLayer extends Layer {
         this.activationFunc = activationFunc;
     }
     passOne(input) {
-        return input.map(value => this.activationFunc(value, false));
+        return input.map((value) => this.activationFunc(value, false));
     }
     initDerivatives() {
         // There are no fields to adjust in an activation layer
     }
-    setOneDerivative(delta, batchIdx) {
+    setOneDerivative(delta, batchIdx, lastLayer) {
+        if (lastLayer) return;
         const self = this;
-        return delta.map((d, index) => delta.get_byDataIdx(index) * self.activationFunc(self.lastOutput[batchIdx].get_byDataIdx(index), true));
+        return delta.map(
+            (d, index) =>
+                delta.get_byDataIdx(index) *
+                self.activationFunc(
+                    self.lastOutput[batchIdx].get_byDataIdx(index),
+                    true
+                )
+        );
+    }
+    setOneSquaredDerivative(lambda, batchIdx, finalOutputSize, lastLayer) {
+        if (lastLayer) return;
+        const self = this;
+        if (!lambda.diagonal)
+            return lambda.map(
+                (l, index) =>
+                    lambda.get_byDataIdx(index) *
+                    self.activationFunc(
+                        self.lastOutput[batchIdx].get_byDataIdx(index[1]),
+                        true
+                    )
+            );
+        return {
+            ...lambda,
+            diagonal: lambda.diagonal.map((l, index) =>
+                self.activationFunc(
+                    self.lastOutput[batchIdx].get_byDataIdx(index[1]),
+                    true
+                )
+            ),
+        };
     }
     adjust(alpha) {
         // There are no fields to adjust in an activation layer
@@ -202,16 +322,26 @@ class BatchNormalizationLayer extends Layer {
         elementWise(batch[0].dim, (index) => {
             for (const input of batch) {
                 this.mean.add_to(index, input.get(index) / batch.length);
-                this.squareMean.add_to(index, (input.get(index) ** 2) / batch.length);
+                this.squareMean.add_to(
+                    index,
+                    input.get(index) ** 2 / batch.length
+                );
             }
-            this.stdev.set(index, Math.sqrt(this.squareMean.get(index) - this.mean.get(index) ** 2) || 1);
+            this.stdev.set(
+                index,
+                Math.sqrt(
+                    this.squareMean.get(index) - this.mean.get(index) ** 2
+                ) || 1
+            );
 
             for (const [i, result] of resultBatch.entries()) {
-                result.set(index, (batch[i].get(index) - this.mean.get(index)) / (this.stdev.get(index) || 1));
+                result.set(
+                    index,
+                    (batch[i].get(index) - this.mean.get(index)) /
+                        (this.stdev.get(index) || 1)
+                );
             }
         });
-        // console.log('mean', this.mean);
-        // console.log('stdev', this.stdev);
         return resultBatch;
     }
 
@@ -221,10 +351,18 @@ class BatchNormalizationLayer extends Layer {
     initDerivatives() {
         // There are no fields to adjust in a batch normalization layer
     }
-    setOneDerivative(delta, batchIdx) {
+    setOneDerivative(delta, batchIdx, lastLayer) {
+        if (lastLayer) return;
         if (!this.stdev) return delta;
         const self = this;
-        return delta.map((d, index) => delta.get_byDataIdx(index) / (self.stdev.get_byDataIdx(index) || 1));
+        return delta.map(
+            (d, index) =>
+                delta.get_byDataIdx(index) /
+                (self.stdev.get_byDataIdx(index) || 1)
+        );
+    }
+    setOneSquaredDerivative(delta, batchIdx, finalOutputSize, lastLayer) {
+        throw "Quadratic Descent is not supported for batch normalization layers (yet)!";
     }
     adjust(alpha) {
         // There are no fields to adjust in a batch normalization layer
@@ -241,33 +379,52 @@ class BatchNormalizationLayer extends Layer {
 class PolyLayer extends Layer {
     constructor(inputSize, outputSize, maxPower, randomRange = 1) {
         super(inputSize, outputSize);
-        this.sizes = Array(maxPower + 1).fill().map((_, p) => [outputSize, ...Array(p).fill(inputSize)]);
-        this.fields = Array(maxPower + 1).fill().map((_, p) => randomTensor(this.sizes[p], randomRange));
+        this.sizes = Array(maxPower + 1)
+            .fill()
+            .map((_, p) => [outputSize, ...Array(p).fill(inputSize)]);
+        this.fields = Array(maxPower + 1)
+            .fill()
+            .map((_, p) => randomTensor(this.sizes[p], randomRange));
     }
     passOne(input) {
         throw "Not implemented for arbitrary power polynomial layers.";
     }
     initDerivatives() {
         this.dfields = this.fields.map((_, p) => zerosTensor(this.sizes[p]));
+        this.lfields = this.fields.map((_, p) => zerosTensor(this.sizes[p]));
     }
-    setOneDerivative(delta, batchIdx) {
+    setOneDerivative(delta, batchIdx, lastLayer) {
+        throw "Not implemented for arbitrary power polynomial layers.";
+    }
+    setOneSquaredDerivative(delta, batchIdx, finalOutputSize, lastLayer) {
         throw "Not implemented for arbitrary power polynomial layers.";
     }
     adjust(alpha) {
         this.fields.forEach((_, p) => {
-            elementWise(this.fields[p].dim, index => {
-                this.fields[p].add_to(index, -alpha * this.dfields[p].get(index));
+            elementWise(this.fields[p].dim, (index) => {
+                this.fields[p].add_to(
+                    index,
+                    // -alpha * this.dfields[p].get(index)(this.lfields[p].get(index) > 0) ?
+                    -this.dfields[p].get(index) *
+                        (this.lfields[p].get(index) > 0
+                            ? 1 / this.lfields[p].get(index)
+                            : alpha)
+                );
             });
         });
         delete this.dfields;
     }
     gradientLengthSquared() {
-        return sumOverIndices([this.fields.length], ([p]) => sumOverIndices(this.sizes[p], (index) =>
-            this.fields[p].get(index) ** 2));
+        return sumOverIndices([this.fields.length], ([p]) =>
+            sumOverIndices(
+                this.sizes[p],
+                (index) => this.dfields[p].get(index) ** 2
+            )
+        );
     }
     nudge(alpha) {
         this.fields.forEach((_, p) => {
-            elementWise(this.fields[p].dim, index => {
+            elementWise(this.fields[p].dim, (index) => {
                 this.fields[p].add_to(index, initRand(alpha));
             });
         });
@@ -279,20 +436,84 @@ class LinearLayer extends PolyLayer {
         super(inputSize, outputSize, 1, randomRange);
     }
     passOne(input) {
-        return elementWise(this.outputSize, ([i]) =>
-            sumOverIndices(this.inputSize, ([j]) => this.fields[1].get([i, j]) * input.get(j)) +
-            this.fields[0].get(i)
+        return elementWise(
+            this.outputSize,
+            ([i]) =>
+                sumOverIndices(
+                    this.inputSize,
+                    ([j]) => this.fields[1].get([i, j]) * input.get(j)
+                ) + this.fields[0].get(i)
         );
     }
-    setOneDerivative(delta, batchIdx) {
+    setOneDerivative(delta, batchIdx, lastLayer) {
         elementWise(this.outputSize, ([i]) => {
             elementWise(this.inputSize, ([j]) => {
-                this.dfields[1].add_to([i, j], delta.get(i) * this.lastInput[batchIdx].get(j));
+                this.dfields[1].add_to(
+                    [i, j],
+                    delta.get(i) * this.lastInput[batchIdx].get(j)
+                );
             });
             this.dfields[0].add_to([i], delta.get(i));
         });
 
-        return elementWise(this.inputSize, ([j]) => sumOverIndices(this.outputSize, ([i]) => delta.get(i) * this.fields[1].get([i, j])));
+        if (lastLayer) return;
+
+        return elementWise(this.inputSize, ([j]) =>
+            sumOverIndices(
+                this.outputSize,
+                ([i]) => delta.get(i) * this.fields[1].get([i, j])
+            )
+        );
+    }
+    setOneSquaredDerivative(lambda, batchIdx, finalOutputSize, lastLayer) {
+        if (!lambda.diagonal) {
+            const tempLambda = zerosTensor([this.outputSize]);
+            elementWise([finalOutputSize], ([k]) => {
+                elementWise(this.outputSize, ([i]) => {
+                    tempLambda.add_to([i], lambda.get([k, i]) ** 2);
+                });
+            });
+
+            elementWise(this.outputSize, ([i]) => {
+                elementWise(this.inputSize, ([j]) => {
+                    this.lfields[1].add_to(
+                        [i, j],
+                        tempLambda.get([i]) *
+                            this.lastInput[batchIdx].get(j) ** 2
+                    );
+                });
+                this.lfields[0].add_to([i], tempLambda.get([i]));
+            });
+            if (lastLayer) return;
+            return elementWise([finalOutputSize, this.inputSize], ([k, j]) =>
+                sumOverIndices(
+                    this.outputSize,
+                    ([i]) => lambda.get([k, i]) * this.fields[1].get([i, j])
+                )
+            );
+        } else {
+            const tempLambda = zerosTensor([this.outputSize]);
+            elementWise(this.outputSize, ([i]) => {
+                tempLambda.add_to([i], lambda.get([i, i]) ** 2);
+            });
+
+            elementWise(this.outputSize, ([i]) => {
+                elementWise(this.inputSize, ([j]) => {
+                    this.lfields[1].add_to(
+                        [i, j],
+                        tempLambda.get([i]) *
+                            this.lastInput[batchIdx].get(j) ** 2
+                    );
+                });
+                this.lfields[0].add_to([i], tempLambda.get([i]));
+            });
+
+            if (lastLayer) return;
+            return elementWise(
+                [finalOutputSize, this.inputSize],
+                ([k, j]) => lambda.get([k, k]) * this.fields[1].get([k, j])
+            );
+        }
     }
 }
 
@@ -301,80 +522,183 @@ class QuadraticLayer extends PolyLayer {
         super(inputSize, outputSize, 2, randomRange);
     }
     passOne(input) {
-        return elementWise([outputSize], ([i]) =>
-            sumOverIndices([inputSize, inputSize], ([j, k]) => this.fields[2].get([i, j, k]) * input.get(j) * input.get(k)) +
-            sumOverIndices([inputSize], ([j]) => this.fields[1].get([i, j]) * input.get(j)) +
-            this.fields[0].get(i)
+        return elementWise(
+            [outputSize],
+            ([i]) =>
+                sumOverIndices(
+                    [inputSize, inputSize],
+                    ([j, k]) =>
+                        this.fields[2].get([i, j, k]) *
+                        input.get(j) *
+                        input.get(k)
+                ) +
+                sumOverIndices(
+                    [inputSize],
+                    ([j]) => this.fields[1].get([i, j]) * input.get(j)
+                ) +
+                this.fields[0].get(i)
         );
     }
     setOneDerivative(delta, batchIdx) {
         elementWise([outputSize], ([i]) => {
             elementWise([inputSize], ([j]) => {
                 elementWise([inputSize], ([k]) => {
-                    this.dfields[2].add_to([i, j, k], delta.get(i) * this.lastInput[batchIdx].get(j) * this.lastInput[batchIdx].get(k));
+                    this.dfields[2].add_to(
+                        [i, j, k],
+                        delta.get(i) *
+                            this.lastInput[batchIdx].get(j) *
+                            this.lastInput[batchIdx].get(k)
+                    );
                 });
-                this.dfields[1].add_to([i, j], delta.get(i) * this.lastInput[batchIdx].get(j));
+                this.dfields[1].add_to(
+                    [i, j],
+                    delta.get(i) * this.lastInput[batchIdx].get(j)
+                );
             });
             this.dfields[0].add_to(i, delta.get(i));
         });
 
-        return elementWise([inputSize], ([j]) => sumOverIndices([outputSize], ([i]) => delta.get(i) * (this.fields[1].get([i, j]) + sumOverIndices([inputSize], ([k]) => (this.fields[2].get([i, j, k]) + this.fields[2].get([i, k, j])) * this.lastInput.get(k)))));
+        return elementWise([inputSize], ([j]) =>
+            sumOverIndices(
+                [outputSize],
+                ([i]) =>
+                    delta.get(i) *
+                    (this.fields[1].get([i, j]) +
+                        sumOverIndices(
+                            [inputSize],
+                            ([k]) =>
+                                (this.fields[2].get([i, j, k]) +
+                                    this.fields[2].get([i, k, j])) *
+                                this.lastInput.get(k)
+                        ))
+            )
+        );
     }
 }
 
 class KernelLayer extends Layer {
-    constructor(inputSize, inputChannels, outputChannels, kernelSpecs, randomRange = 1) {
+    constructor(
+        inputSize,
+        inputChannels,
+        outputChannels,
+        kernelSpecs,
+        randomRange = 1
+    ) {
         super([...inputSize, inputChannels], null);
 
         this.kernelSpecs = kernelSpecs;
 
-        this.default2d('kernelSize', this.kernelSpecs.kernelSize);
-        this.default2d('padding', 0);
-        this.default2d('innerPadding', 0);
-        this.default2d('stride', 1);
+        this.default2d("kernelSize", this.kernelSpecs.kernelSize);
+        this.default2d("padding", 0);
+        this.default2d("innerPadding", 0);
+        this.default2d("stride", 1);
 
         this.kernelSpecs.inputSize = inputSize;
-        this.kernelSpecs.trueInputSize = [0, 1].map(i => 2 * this.kernelSpecs.padding[i] + this.kernelSpecs.inputSize[i] + this.kernelSpecs.innerPadding[i] * (this.kernelSpecs.inputSize[i] - 1));
-        this.kernelSpecs.outputSize = [0, 1].map(i => 1 + Math.floor((this.kernelSpecs.trueInputSize[i] - this.kernelSpecs.kernelSize[i]) / this.kernelSpecs.stride[i]));
+        this.kernelSpecs.trueInputSize = [0, 1].map(
+            (i) =>
+                2 * this.kernelSpecs.padding[i] +
+                this.kernelSpecs.inputSize[i] +
+                this.kernelSpecs.innerPadding[i] *
+                    (this.kernelSpecs.inputSize[i] - 1)
+        );
+        this.kernelSpecs.outputSize = [0, 1].map(
+            (i) =>
+                1 +
+                Math.floor(
+                    (this.kernelSpecs.trueInputSize[i] -
+                        this.kernelSpecs.kernelSize[i]) /
+                        this.kernelSpecs.stride[i]
+                )
+        );
 
         this.outputSize = [...this.kernelSpecs.outputSize, outputChannels];
 
-        this.kernels = Array(outputChannels).fill().map(() => Array(inputChannels).fill().map(() => new Kernel(this.kernelSpecs, randomRange)));
-        this.bias = Array(outputChannels).fill().map(() => initRand(randomRange));
+        this.kernels = Array(outputChannels)
+            .fill()
+            .map(() =>
+                Array(inputChannels)
+                    .fill()
+                    .map(() => new Kernel(this.kernelSpecs, randomRange))
+            );
+        this.bias = Array(outputChannels)
+            .fill()
+            .map(() => initRand(randomRange));
     }
     // helper function that adds default value to kernel specs, or if the value is a number then it copies it twice so that its 2 dimensional.
     // This allows users to theoretically define any size for any of these parameters
     default2d(attribute, defaultValue) {
-        if (this.kernelSpecs[attribute] === undefined) this.kernelSpecs[attribute] = [defaultValue, defaultValue];
-        if (typeof this.kernelSpecs[attribute] === 'number') this.kernelSpecs[attribute] = [this.kernelSpecs[attribute], this.kernelSpecs[attribute]];
+        if (this.kernelSpecs[attribute] === undefined)
+            this.kernelSpecs[attribute] = [defaultValue, defaultValue];
+        if (typeof this.kernelSpecs[attribute] === "number")
+            this.kernelSpecs[attribute] = [
+                this.kernelSpecs[attribute],
+                this.kernelSpecs[attribute],
+            ];
     }
     passOne(input) {
-        const outputtedKernelValues = this.kernels.map(outputs => outputs.map((kernel, inputChannel) => kernel.pass(input, inputChannel)));
+        const outputtedKernelValues = this.kernels.map((outputs) =>
+            outputs.map((kernel, inputChannel) =>
+                kernel.pass(input, inputChannel)
+            )
+        );
 
-        return elementWise(this.outputSize, ([ox, oy, i]) =>
-            this.bias[i] +
-            sumOverIndices([this.inputSize[2]], ([j]) => outputtedKernelValues[i][j].get([ox, oy]))
+        return elementWise(
+            this.outputSize,
+            ([ox, oy, i]) =>
+                this.bias[i] +
+                sumOverIndices([this.inputSize[2]], ([j]) =>
+                    outputtedKernelValues[i][j].get([ox, oy])
+                )
         );
     }
     initDerivatives() {
         this.dbias = zerosTensor([this.outputSize[2]]);
-        this.kernels.forEach(kernelRow => kernelRow.forEach(kernel => {
-            kernel.initDerivatives();
-        }));
+        this.kernels.forEach((kernelRow) =>
+            kernelRow.forEach((kernel) => {
+                kernel.initDerivatives();
+            })
+        );
     }
     setOneDerivative(delta, batchIdx) {
-        this.dbias = elementWise([outputChannels], ([i]) => sumOverIndices(processedKernelSpecs.outputSize, ([ox, oy]) => this.dbias.get(i) + delta.get([ox, oy, i])));
+        this.dbias = elementWise([outputChannels], ([i]) =>
+            sumOverIndices(
+                processedKernelSpecs.outputSize,
+                ([ox, oy]) => this.dbias.get(i) + delta.get([ox, oy, i])
+            )
+        );
 
-        this.kernels.forEach((kernelRow, outputChannel) => kernelRow.forEach((kernel, inputChannel) => {
-            kernel.setOneDerivative(delta, this.lastInput[batchIdx], inputChannel, outputChannel);
-        }));
+        this.kernels.forEach((kernelRow, outputChannel) =>
+            kernelRow.forEach((kernel, inputChannel) => {
+                kernel.setOneDerivative(
+                    delta,
+                    this.lastInput[batchIdx],
+                    inputChannel,
+                    outputChannel
+                );
+            })
+        );
 
         const newDelta = zerosTensor(this.inputSize);
-        elementWise([this.inputSize[2]], ([j]) => this.kernels[0][0].inputOutputLoop(([ox, oy, r, s], kernelIndex) => {
-            newDelta.add_to([r, s, j],
-                sumOverIndices([this.outputSize[2]], ([i]) => delta.get([ox, oy, i]) * this.kernels[i][j].adjustment.get([ox, oy, r, s]))
+        elementWise([this.inputSize[2]], ([j]) =>
+            this.kernels[0][0].inputOutputLoop(
+                ([ox, oy, r, s], kernelIndex) => {
+                    newDelta.add_to(
+                        [r, s, j],
+                        sumOverIndices(
+                            [this.outputSize[2]],
+                            ([i]) =>
+                                delta.get([ox, oy, i]) *
+                                this.kernels[i][j].adjustment.get([
+                                    ox,
+                                    oy,
+                                    r,
+                                    s,
+                                ])
+                        )
+                    );
+                }
             )
-        }));
+        );
         return newDelta;
     }
     adjust(alpha) {
@@ -387,7 +711,12 @@ class KernelLayer extends Layer {
         delete this.dbias;
     }
     gradientLengthSquared() {
-        return sumOverIndices([outputChannels], ([n]) => this.dbias.get(n) ** 2) + sumOverIndices([outputChannels, inputChannels], ([n, m]) => this.kernels[n][m].gradientLengthSquared());
+        return (
+            sumOverIndices([outputChannels], ([n]) => this.dbias.get(n) ** 2) +
+            sumOverIndices([outputChannels, inputChannels], ([n, m]) =>
+                this.kernels[n][m].gradientLengthSquared()
+            )
+        );
     }
     nudge(alpha) {
         for (let n = 0; n < outputChannels; n++) {
@@ -410,13 +739,48 @@ class Kernel {
     inputOutputLoop(func) {
         for (let ox = 0; ox < this.outputSize[0]; ox++) {
             for (let oy = 0; oy < this.outputSize[1]; oy++) {
-                const rMin = Math.max(0, Math.ceil((ox * this.stride[0] - this.padding[0]) / (this.innerPadding[0] + 1)));
-                const rMax = Math.min(this.inputSize[0], Math.ceil((this.kernelSize[0] + ox * this.stride[0] - this.padding[0]) / (this.innerPadding[0] + 1)));
-                const sMin = Math.max(0, Math.ceil((oy * this.stride[1] - this.padding[1]) / (this.innerPadding[1] + 1)));
-                const sMax = Math.min(this.inputSize[1], Math.ceil((this.kernelSize[1] + oy * this.stride[1] - this.padding[1]) / (this.innerPadding[1] + 1)));
+                const rMin = Math.max(
+                    0,
+                    Math.ceil(
+                        (ox * this.stride[0] - this.padding[0]) /
+                            (this.innerPadding[0] + 1)
+                    )
+                );
+                const rMax = Math.min(
+                    this.inputSize[0],
+                    Math.ceil(
+                        (this.kernelSize[0] +
+                            ox * this.stride[0] -
+                            this.padding[0]) /
+                            (this.innerPadding[0] + 1)
+                    )
+                );
+                const sMin = Math.max(
+                    0,
+                    Math.ceil(
+                        (oy * this.stride[1] - this.padding[1]) /
+                            (this.innerPadding[1] + 1)
+                    )
+                );
+                const sMax = Math.min(
+                    this.inputSize[1],
+                    Math.ceil(
+                        (this.kernelSize[1] +
+                            oy * this.stride[1] -
+                            this.padding[1]) /
+                            (this.innerPadding[1] + 1)
+                    )
+                );
                 for (let r = rMin; r < rMax; r++) {
                     for (let s = sMin; s < sMax; s++) {
-                        const kernelIndex = [this.padding[0] + (this.innerPadding[0] + 1) * r - ox * this.stride[0], this.padding[1] + (this.innerPadding[1] + 1) * s - oy * this.stride[1]];
+                        const kernelIndex = [
+                            this.padding[0] +
+                                (this.innerPadding[0] + 1) * r -
+                                ox * this.stride[0],
+                            this.padding[1] +
+                                (this.innerPadding[1] + 1) * s -
+                                oy * this.stride[1],
+                        ];
                         func([ox, oy, r, s], kernelIndex);
                     }
                 }
@@ -427,9 +791,10 @@ class Kernel {
     pass(input, inputChannel) {
         const output = zerosTensor(this.outputSize);
         this.inputOutputLoop(([ox, oy, r, s], kernelIndex) => {
-            output.add_to([ox, oy],
-                this.kernel.get(kernelIndex) *
-                input.get([r, s, inputChannel]));
+            output.add_to(
+                [ox, oy],
+                this.kernel.get(kernelIndex) * input.get([r, s, inputChannel])
+            );
         });
         return output;
     }
@@ -439,16 +804,25 @@ class Kernel {
     setOneDerivative(delta, input, inputChannel, outputChannel) {
         this.adjustment = zerosTensor([...this.outputSize, ...this.inputSize]);
         this.inputOutputLoop(([ox, oy, r, s], kernelIndex) => {
-            this.dkernel.add_to(kernelIndex, delta.get([ox, oy, outputChannel]) * input.get([r, s, inputChannel]));
+            this.dkernel.add_to(
+                kernelIndex,
+                delta.get([ox, oy, outputChannel]) *
+                    input.get([r, s, inputChannel])
+            );
             this.adjustment.set([ox, oy, r, s], this.kernel.get(kernelIndex));
         });
     }
     adjust(alpha) {
-        elementWise(this.kernelSize, ([x, y]) => this.kernel.add_to([x, y], -alpha * this.dkernel.get([x, y])));
+        elementWise(this.kernelSize, ([x, y]) =>
+            this.kernel.add_to([x, y], -alpha * this.dkernel.get([x, y]))
+        );
         delete this.dkernel;
     }
     gradientLengthSquared() {
-        return sumOverIndices(this.kernelSize, ([x, y]) => this.dkernel.get([x, y]) ** 2);
+        return sumOverIndices(
+            this.kernelSize,
+            ([x, y]) => this.dkernel.get([x, y]) ** 2
+        );
     }
     nudge(alpha) {
         elementWise(this.kernelSize, ([x, y]) => {
@@ -463,20 +837,21 @@ class Kernel {
 const sigmoid = (x, derivative) => {
     if (!derivative) return 1 / (1 + Math.exp(-x));
     return x * (1 - x);
-}
+};
 const ReLU = (x, derivative) => {
     if (!derivative) return x > 0 ? x : 0;
-    return x > 0 ? 1 : 0
-}
+    return x > 0 ? 1 : 0;
+};
 const clip = (x, derivative) => {
     if (!derivative) return Math.max(0, Math.min(1, x));
     return x === 1 || x === 0 ? 0 : 1;
-}
+};
 const lrelu = (alpha) => (x, derivative) => {
     if (!derivative) return x > 0 ? x : alpha * x;
-    if (alpha < 0) throw "Leaky Relu cannot determine the derivative from the output when alpha is less than 0!";
+    if (alpha < 0)
+        throw "Leaky Relu cannot determine the derivative from the output when alpha is less than 0!";
     return x > 0 ? 1 : alpha;
-}
+};
 const tanh = (x, derivative) => {
     if (!derivative) {
         if (x >= 19) return 1;
@@ -485,11 +860,11 @@ const tanh = (x, derivative) => {
         return (ep - 1) / (ep + 1);
     }
     return 1 - x ** 2;
-}
+};
 const linear = (x, derivative = false) => {
     if (!derivative) return x;
     return 1;
-}
+};
 
 // Todo: Make work
 // const dropout = (func, rate) =>  (x, derivative) => {
@@ -498,7 +873,9 @@ const linear = (x, derivative = false) => {
 // }
 
 // This is just for convenience, if someone wants to create their own activation function all they need to do is provide a forward function and an activation
-const createActivationFunc = (reg, deriv) => (x, derivative = false) => {
-    if (!derivative) return reg(x);
-    return deriv(x);
-}
+const createActivationFunc =
+    (reg, deriv) =>
+    (x, derivative = false) => {
+        if (!derivative) return reg(x);
+        return deriv(x);
+    };
