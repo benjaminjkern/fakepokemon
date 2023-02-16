@@ -72,8 +72,8 @@ class NeuralNet {
         }
 
         if (Number.isNaN(gradientLength)) {
-            // window.location.reload();
-            throw "oops";
+            window.location.reload();
+            // throw "oops";
         }
 
         const clipAmount = Math.min(1, this.maxGradient / gradientLength);
@@ -101,7 +101,7 @@ class LinearNeuralNet extends NeuralNet {
                 new LinearLayer(layerCounts[i], layerCount, randomRange)
             );
             if (i < layerCounts.length - 2) {
-                // this.layers.push(new BatchNormalizationLayer(layerCount));
+                this.layers.push(new BatchNormalizationLayer(layerCount));
                 this.layers.push(new ActivationLayer(layerCount, activation));
             }
         }
@@ -375,7 +375,7 @@ class BatchNormalizationLayer extends Layer {
         return {
             ...lambda,
             diagonal: lambda.diagonal.map(
-                (l, index) => 1 / (self.stdev.get_byDataIdx(index) || 1)
+                (l, index) => l / (self.stdev.get_byDataIdx(index) || 1)
             ),
         };
     }
@@ -422,9 +422,10 @@ class PolyLayer extends Layer {
                     index,
                     // -alpha * this.dfields[p].get(index)(this.lfields[p].get(index) > 0) ?
                     -this.dfields[p].get(index) *
-                        (this.lfields[p].get(index) > 0
-                            ? proportion / this.lfields[p].get(index)
-                            : 0)
+                        // (this.lfields[p].get(index) > 0
+                        //     ? proportion / this.lfields[p].get(index)
+                        //     : alpha)
+                        alpha
                 );
             });
         });

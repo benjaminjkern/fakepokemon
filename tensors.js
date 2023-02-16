@@ -24,9 +24,9 @@ const newSparseTensor = (dim, data) => {
     return tensor;
 };
 
-const randomTensor = (dim, range = 1) => {
+const randomTensor = (dim, range = 1, offset = 0) => {
     const tensor = zerosTensor(dim);
-    tensor.getFunc = () => (Math.random() * 2 - 1) * range;
+    tensor.getFunc = () => (Math.random() * 2 - 1) * range + offset;
     return tensor;
 };
 

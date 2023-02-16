@@ -45,7 +45,7 @@ window.onload = function () {
 };
 
 const restart = (ctx) => {
-    autoencoder = new LinearNeuralNet([96 * 96 * 4, 1, 96 * 96 * 4]);
+    autoencoder = new LinearNeuralNet([96 * 96 * 4, 3, 96 * 96 * 4]);
     // autoencoder = new LinearNeuralNet([
     //     96 * 96 * 4,
     //     100,
@@ -176,9 +176,9 @@ const restart = (ctx) => {
     start(ctx);
 };
 
-const numPokemon = 2;
+const numPokemon = 3;
 
-const batchSize = 2;
+const batchSize = 3;
 
 const start = (ctx) => {
     controlVars.kill = true;
@@ -322,7 +322,7 @@ const makeframe = (ctx) => {
     autoencoder.backProp(
         pickedPokemon,
         pickedPokemon,
-        0.001,
+        0.1,
         batchSize / numPokemon
     );
     // console.log(autoencoder);
