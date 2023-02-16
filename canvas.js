@@ -1,49 +1,46 @@
 let canvas;
 const controlVars = { kill: false, killed: true };
-const settings = { screenSize: 0, pixelSize: 32, frame: 1, priority: 1 };
-const keysDown = {};
+const settings = { screenSize: 0, pixelSize: 64, frame: 1, priority: 1 };
 
-let best;
 let brain;
-let showing;
 let targets;
-let mutate;
-let count = 0;
 
-window.onload = function() {
+let avgerror = 0;
+let lowesterror = Number.MAX_SAFE_INTEGER;
+let iters = 0;
+paused = false;
+
+window.onload = function () {
     canvas = document.getElementById('canvas');
     let ctx = canvas.getContext('2d');
 
-    window.onresize = function() {
-        start(ctx);
-    }
-
-    window.onkeydown = function(e) {
-        if (e.code === 'ArrowUp') {
-            settings.priority = (settings.priority + 1) % 3;
-            restart(ctx);
-        } else if (e.code === 'ArrowDown') {
-            settings.priority = (settings.priority + 2) % 3;
-            restart(ctx);
-        } else if (e.code === 'ArrowLeft') {
-            settings.pixelSize = Math.max(1, settings.pixelSize / 2);
-            start(ctx);
-        } else if (e.code === 'ArrowRight') {
-            settings.pixelSize *= 2;
-            start(ctx);
-        }
-        keysDown[e.code] = true;
-    }
-
-    window.onkeyup = function(e) {
-        delete keysDown[e.code];
-    }
-
-    window.onmousedown = function(e) {
+    window.onmousedown = function (e) {
         const dx = (2 * e.x / canvas.width - 1) * settings.frame;
         const dy = (2 * e.y / canvas.height - 1) * settings.frame;
         console.log(dx, dy);
-        console.log(best.pass([dx, dy]));
+        const result = brain.pass([newTensor([2], [dx, dy])])[0].data;
+        console.log(result);
+
+        const width = 2 * 5 * settings.frame / canvas.width;
+
+        for (const target of targets) {
+            if ((dx - target.pos.data[0]) ** 2 + (dy - target.pos.data[1]) ** 2 < width ** 2) {
+                console.log(target);
+                break;
+            }
+        }
+    }
+
+    window.onkeydown = function (e) {
+        if (paused) return;
+        paused = true;
+        settings.pixelSize = 4;
+        draw(ctx);
+    }
+
+    window.onkeyup = function (e) {
+        paused = false;
+        settings.pixelSize = 64;
     }
 
     restart(ctx);
@@ -51,14 +48,42 @@ window.onload = function() {
     drawLoop(ctx);
 };
 
+const randomColors = 2;
+const randomColor = () => {
+    const r = Math.floor(Math.random() * randomColors);
+    const a = Array(randomColors).fill(0);
+    a[r] = 1;
+    return a;
+}
+const colors = Array(randomColors).fill().map(() => Array(3).fill().map(() => Math.random()));
+const getColor = (output) => {
+    let max = -Number.MAX_VALUE;
+    let maxi = -1;
+    for (const [j, o] of output.entries()) {
+        if (o > max) {
+            max = o;
+            maxi = j;
+        }
+    }
+    return colors[maxi];
+
+    // const sum = output.reduce((p, c) => p + c, 0);
+
+    // const color = [0, 0, 0];
+    // for (const [j, o] of output.entries()) {
+    //     for (let i = 0; i < 3; i++) {
+    //         color[i] += o * colors[j][i] / sum;
+    //     }
+    // }
+    // return color;
+}
+
 const restart = (ctx) => {
-    best = undefined;
-    brain = newNeuralNet([2, 100, 3], 1);
-    targets = Array(100).fill().map(() => ({
-        pos: [initRand(settings.frame), initRand(settings.frame)],
-        color: Array(3).fill().map(() => Math.random()),
+    brain = new LinearNeuralNet([2, 10, 10, 10, 10, 10, 10, 3], { batchNormalize: false, finalActivation: sigmoid });
+    targets = Array(50).fill().map(() => ({
+        pos: randomTensor([2], settings.frame),
+        color: randomTensor([3], 0.5, 0.5),
     }));
-    mutate = 0.01;
 
     start(ctx);
 }
@@ -72,8 +97,6 @@ const start = (ctx) => {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     settings.screenSize = Math.min(canvas.width, canvas.height);
-
-    if (!best && brain) best = brain;
     // console.log(best);
 
     initframe(ctx);
@@ -81,46 +104,35 @@ const start = (ctx) => {
 }
 
 const drawLoop = (ctx) => {
-    if (count > 0) setTimeout(() => drawLoop(ctx), 1000);
-    console.log("Tested: " + count + "\nBest: " + best.min + "\nAverage: " + best.average + "\nWorst: " + best.max);
-    count = 0;
-    draw(ctx);
+    if (iters > 0) setTimeout(() => drawLoop(ctx), 1000);
+    if (!paused) draw(ctx);
 }
 
-const initframe = (ctx) => {}
+const initframe = (ctx) => { }
 
 const makeframe = (ctx) => {
-    count++;
     if (controlVars.kill) {
         controlVars.killed = true;
         setTimeout(() => start(ctx), 1000);
         return;
     }
     controlVars.killed = false;
+    if (!paused) {
+        iters++;
 
-    brain.errors = targets.map(target => brain.error(target.pos, target.color));
+        brain.error(targets.map(target => target.pos), targets.map(target => target.color));
 
-    brain.min = Math.min(...brain.errors);
-    brain.max = Math.max(...brain.errors);
-    brain.average = brain.errors.reduce((p, c) => p + c, 0) / targets.length;
+        avgerror = (avgerror * (iters - 1) + brain.lastError) / iters;
 
-    switch (settings.priority) {
-        case 0: // Best
-            brain.errorScore = brain.errors.reduce((p, c) => c > brain.min ? Math.min(p, c) : p, brain.max);
-            break;
-        case 1: // Average
-            brain.errorScore = brain.average;
-            break;
-        case 2: // Worst
-            brain.errorScore = brain.max;
-            break;
+        if (brain.lastError < lowesterror) {
+            lowesterror = brain.lastError;
+        }
+
+        const status = document.getElementById('status');
+        status.innerHTML = `${brain.lastError}, ${lowesterror}`;
+
+        brain.backProp(targets.map(target => target.pos), targets.map(target => target.color), 1);
     }
-    if (!best || brain.errorScore < best.errorScore) {
-        // best = brain;
-    }
-
-    brain = mutateNeuralNet(best, 0.01);
-    brain.backPropMulti(targets.map(target => target.pos), targets.map(target => target.color), 1);
 
     setTimeout(() => {
         makeframe(ctx);
@@ -134,11 +146,24 @@ const draw = (ctx) => {
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
-    for (let y = 0; y < Math.ceil(canvas.height / settings.pixelSize); y++) {
-        for (let x = 0; x < Math.ceil(canvas.width / settings.pixelSize); x++) {
-            const dx = (2 * x * settings.pixelSize / canvas.width - 1) * settings.frame;
-            const dy = (2 * y * settings.pixelSize / canvas.height - 1) * settings.frame;
-            const output = best.pass([dx, dy]).flat();
+    const ysize = Math.ceil(canvas.height / settings.pixelSize);
+    const xsize = Math.ceil(canvas.width / settings.pixelSize);
+
+    const inputs = Array(xsize * ysize).fill().map((_, i) => {
+        const [x, y] = [i % xsize, Math.floor(i / xsize)];
+        const dx = (2 * (x + 0.5) * settings.pixelSize / canvas.width - 1) * settings.frame;
+        const dy = (2 * (y + 0.5) * settings.pixelSize / canvas.height - 1) * settings.frame;
+        return newTensor([2], [dx, dy]);
+    });
+    // console.log(inputs);
+
+    const outputs = brain.pass(inputs);
+    // console.log(inputs[0].data);
+    // console.log(outputs[0].data);
+
+    for (let y = 0; y < ysize; y++) {
+        for (let x = 0; x < xsize; x++) {
+            const output = outputs[y * xsize + x].data;
             const alpha = (output[3] || 1) * 255 * Math.min(1, settings.pixelSize ** 2);
             for (let py = 0; py < settings.pixelSize; py++) {
                 if (Math.floor(y * settings.pixelSize + py) < 0 || Math.floor(y * settings.pixelSize + py) >= canvas.height) continue;
@@ -156,10 +181,10 @@ const draw = (ctx) => {
     ctx.putImageData(imageData, 0, 0);
 
     for (const target of targets) {
-        ctx.fillStyle = `rgb(${target.color.map(c => Math.floor(c * 255)).join(',')})`;
+        ctx.fillStyle = `rgb(${target.color.data.map(c => Math.floor(c * 255)).join(',')})`;
         ctx.strokeStyle = "black";
         ctx.beginPath();
-        ctx.arc((target.pos[0] / settings.frame + 1) * canvas.width / 2, (target.pos[1] / settings.frame + 1) * canvas.height / 2, 5, 0, 2 * Math.PI);
+        ctx.arc((target.pos.data[0] / settings.frame + 1) * canvas.width / 2, (target.pos.data[1] / settings.frame + 1) * canvas.height / 2, 5, 0, 2 * Math.PI);
         ctx.fill();
         ctx.stroke();
     }
@@ -177,7 +202,7 @@ UTIL FUNCTIONS
 
 const addEventListener = (target, listenerType, func) => {
     if (!target[listenerType]) target[listenerType] = func;
-    else target[listenerType] = function(e) {
+    else target[listenerType] = function (e) {
         target[listenerType](e);
         func(e);
     }

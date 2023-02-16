@@ -17,9 +17,9 @@ const newSparseTensor = (dim, data) => {
     return tensor;
 };
 
-const randomTensor = (dim, range = 1) => {
+const randomTensor = (dim, range = 1, offset = 0) => {
     const tensor = zerosTensor(dim);
-    tensor.isRandom = range;
+    tensor.isRandom = [range, offset];
     return tensor;
 }
 
@@ -36,7 +36,7 @@ const zerosTensor = (dim) => {
         get_byDataIdx(dataIdx) {
             if (this.data[dataIdx] === undefined) {
                 if (this.isRandom) {
-                    this.data[dataIdx] = this.isRandom * (Math.random() * 2 - 1);
+                    this.data[dataIdx] = this.isRandom[0] * (Math.random() * 2 - 1) + this.isRandom[1];
                 } else {
                     return 0;
                 }
@@ -127,22 +127,3 @@ const sumOverIndices = (dim, func) => {
     }
     return sum;
 }
-
-// const M = 2;
-// const N = 10;
-
-// const a = randomTensor([M, N, N]);
-// const b = randomTensor([M, N]);
-// const c = randomTensor([M]);
-// const x = randomTensor([N]);
-
-// const output = elementWise([M], ([i]) =>
-//     sumOverIndices([N, N], ([j, k]) => a.get([i, j, k]) * x.get(j) * x.get(k)) +
-//     sumOverIndices([N], ([j]) => b.get([i, j]) * x.get(j)) +
-//     c.get(i)
-// );
-
-// console.log(x);
-// console.log(output);
-// console.log(elementWise([M], ([i]) => 2 * c.get(i)))
-// console.log(sumOverIndices([M], ([i]) => c.get(i)));

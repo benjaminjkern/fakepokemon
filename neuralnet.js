@@ -4,7 +4,7 @@ class NeuralNet {
         this.name = name;
 
         this.nudgeOnFlat = options.nudgeOnFlat || true;
-        this.maxGradient = options.maxGradient || 100;
+        this.maxGradient = options.maxGradient || 1;
     }
     pass(batch) {
         // console.log("PASS");
@@ -21,12 +21,14 @@ class NeuralNet {
         ) * 0.5 / batch.length;
         return this.lastError;
     }
-    backProp(batch, targets, alpha) {
+    backProp(batch, targets, alpha, batchDelta = undefined) {
         // console.log("BACKPROP");
-        const results = this.pass(batch);
-        let batchDelta = results.map((result, b) =>
-            elementWise(result.dim, (i) => result.get(i) - targets[b].get(i))
-        );
+        if (!batchDelta) {
+            const results = this.pass(batch);
+            batchDelta = results.map((result, b) =>
+                elementWise(result.dim, (i) => result.get(i) - targets[b].get(i))
+            );
+        }
         for (let n = this.layers.length - 1; n >= 0; n--) {
             // console.log(this.layers[n].constructor.name, batchDelta);
             batchDelta = this.layers[n].setDerivatives(batchDelta);
@@ -52,6 +54,7 @@ class NeuralNet {
         for (let n = this.layers.length - 1; n >= 0; n--) {
             this.layers[n].adjust(effectiveAlpha * clipAmount);
         }
+        return batchDelta;
     }
 }
 
@@ -60,13 +63,23 @@ class NeuralNet {
 // Different types of out-of-the-box neural nets
 //-------------------------------------------------------------------------------------------------------------------
 class LinearNeuralNet extends NeuralNet {
-    constructor(layerCounts, randomRange = 1, activation = ReLU, finalActivation = activation) {
+    constructor(layerCounts, options = {}) {
         super([]);
+        const randomRange = options.randomRange || 1;
+        const activation = options.activation || ReLU;
+        const finalActivation = options.finalActivation || linear;
+        const finalSoftmax = options.finalSoftmax || false;
+        const batchNormalize = options.batchNormalize === undefined ? true : options.batchNormalize;
+
         for (const [i, layerCount] of layerCounts.slice(1).entries()) {
             this.layers.push(new LinearLayer(layerCounts[i], layerCount, randomRange));
             if (i < layerCounts.length - 2) {
-                this.layers.push(new BatchNormalizationLayer(layerCount));
+                if (batchNormalize) this.layers.push(new BatchNormalizationLayer(layerCount));
                 this.layers.push(new ActivationLayer(layerCount, activation));
+            } else if (finalSoftmax) {
+                this.layers.push(new SoftmaxLayer(layerCount))
+            } else {
+                this.layers.push(new ActivationLayer(layerCount, finalActivation));
             }
         }
     }
@@ -174,6 +187,36 @@ class ActivationLayer extends Layer {
     setOneDerivative(delta, batchIdx) {
         const self = this;
         return delta.map((d, index) => delta.get_byDataIdx(index) * self.activationFunc(self.lastOutput[batchIdx].get_byDataIdx(index), true));
+    }
+    adjust(alpha) {
+        // There are no fields to adjust in an activation layer
+    }
+    gradientLengthSquared() {
+        // There is no gradient in an activation layer
+        return 0;
+    }
+    nudge(alpha) {
+        // There are no fields to nudge in an activation layer
+    }
+}
+
+class SoftmaxLayer extends Layer {
+    constructor(inputSize) {
+        super(inputSize, inputSize);
+    }
+    passOne(input) {
+        const max = Math.max(...input.data);
+        const adjustedList = input.map(a => a - max);
+        const vals = adjustedList.map(Math.exp);
+        const sum = vals.data.reduce((p, c) => p + c, 0);
+        return adjustedList.map(a => Math.exp(a) / sum);
+    }
+    initDerivatives() {
+        // There are no fields to adjust in an activation layer
+    }
+    setOneDerivative(delta, batchIdx) {
+        const self = this;
+        return elementWise(delta.dim, ([k]) => sumOverIndices(delta.dim, ([i]) => self.lastOutput[batchIdx].get(i) * ((i === k ? 1 : 0) - self.lastOutput[batchIdx].get(k))));
     }
     adjust(alpha) {
         // There are no fields to adjust in an activation layer
@@ -490,6 +533,7 @@ const linear = (x, derivative = false) => {
     if (!derivative) return x;
     return 1;
 }
+
 
 // Todo: Make work
 // const dropout = (func, rate) =>  (x, derivative) => {
