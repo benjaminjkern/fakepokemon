@@ -101,18 +101,18 @@ class LinearNeuralNet extends NeuralNet {
                 new LinearLayer(layerCounts[i], layerCount, randomRange)
             );
             if (i < layerCounts.length - 2) {
-                // this.layers.push(new BatchNormalizationLayer(layerCount));
+                this.layers.push(new BatchNormalizationLayer(layerCount));
                 this.layers.push(new ActivationLayer(layerCount, activation));
             }
         }
 
-        if (finalActivation)
-            this.layers.push(
-                new ActivationLayer(
-                    layerCounts[layerCounts.length - 1],
-                    finalActivation
-                )
-            );
+        // if (finalActivation)
+        //     this.layers.push(
+        //         new ActivationLayer(
+        //             layerCounts[layerCounts.length - 1],
+        //             finalActivation
+        //         )
+        //     );
     }
     copy() {
         const newNet = new NeuralNet([]);
@@ -309,8 +309,11 @@ class ActivationLayer extends Layer {
 }
 
 class BatchNormalizationLayer extends Layer {
-    constructor(inputSize) {
+    constructor(inputSize, randomRange = 1, epsilon = 0.0000001) {
         super(inputSize, inputSize);
+        this.gamma = randomTensor([inputSize], randomRange);
+        this.beta = randomTensor([inputSize], randomRange);
+        this.epsilon = epsilon;
     }
     // this one needs to overwrite the pass within layer because it needs access to the batch itself
     pass(batch) {
@@ -331,15 +334,19 @@ class BatchNormalizationLayer extends Layer {
             this.stdev.set(
                 index,
                 Math.sqrt(
-                    this.squareMean.get(index) - this.mean.get(index) ** 2
-                ) || 1
+                    this.squareMean.get(index) -
+                        this.mean.get(index) ** 2 +
+                        this.epsilon
+                )
             );
 
             for (const [i, result] of resultBatch.entries()) {
                 result.set(
                     index,
-                    (batch[i].get(index) - this.mean.get(index)) /
-                        (this.stdev.get(index) || 1)
+                    (this.gamma.get(index) *
+                        (batch[i].get(index) - this.mean.get(index))) /
+                        this.stdev.get(index) +
+                        this.beta.get(index)
                 );
             }
         });
@@ -358,8 +365,8 @@ class BatchNormalizationLayer extends Layer {
         const self = this;
         return delta.map(
             (d, index) =>
-                delta.get_byDataIdx(index) /
-                (self.stdev.get_byDataIdx(index) || 1)
+                (self.gamma.get_byDataIdx(index) * delta.get_byDataIdx(index)) /
+                self.stdev.get_byDataIdx(index)
         );
     }
     setOneSquaredDerivative(lambda, batchIdx, finalOutputSize, lastLayer) {

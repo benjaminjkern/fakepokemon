@@ -176,9 +176,9 @@ const restart = (ctx) => {
     start(ctx);
 };
 
-const numPokemon = 2;
+const numPokemon = 3;
 
-const batchSize = 2;
+const batchSize = 3;
 
 const start = (ctx) => {
     controlVars.kill = true;
